@@ -2,7 +2,7 @@
 
 Simplest native note app built by Flutter, tested for Android and self used on Note20U5G. 
  
- - sqlite for date storage.
+ - sqlite for data storage.
  - import/export data manually(backup before remove the app), standard json format 
  - require fingerprint.
 
