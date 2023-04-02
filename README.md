@@ -21,6 +21,4 @@ Simplest native note app built by Flutter, tested for Android and self used on N
   ![image](./images/202110231100542.jpg)  
  
  
- ## Try on Android
- 
- http://d.firim.top/3u8c
+
