@@ -2,11 +2,10 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'dart:convert';
 
+import '../i18n/SimpleLocalizations.dart';
 import '../model/Note.dart';
 import '../service/NoteAccessSqlite.dart';
-import 'notelanding/NoteLanding.dart';
-
-import '../component/NumberPuzzles.dart';
+import 'NoteLanding.dart';
 
 class Backup extends StatefulWidget {
   static final String routeName = '/Backup';
@@ -26,7 +25,8 @@ class _BackupState extends State<Backup> {
 
   @override
   Widget build(BuildContext context) {
-    //https://medium.com/@iamatul_k/flutter-handle-back-button-in-a-flutter-application-override-back-arrow-button-in-app-bar-d17e0a3d41f
+    final sl = SimpleLocalizations.of(context);
+
     return WillPopScope(
       onWillPop: _onBackPressed,
       child: Scaffold(
@@ -38,14 +38,16 @@ class _BackupState extends State<Backup> {
                 }),
             actions: [
               IconButton(
-                  icon: Icon(Icons.content_copy_sharp),
+                  tooltip: sl?.getText('exportToJSON'),
+                  icon: Icon(Icons.file_upload_outlined),
                   onPressed: () async {
                     await _populateJsonExport();
                   }),
               IconButton(
+                  tooltip: sl?.getText('importFromJSON'),
                   icon: Icon(_restore_disabled
-                      ? Icons.sync_disabled_sharp
-                      : Icons.sync_sharp),
+                      ? Icons.file_download_off
+                      : Icons.file_download),
                   onPressed: () {
                     if (_restore_disabled) {
                       return;
@@ -61,25 +63,40 @@ class _BackupState extends State<Backup> {
                         .toList();
 
                     notes.forEach((note) async {
-                      await db.addNote(note);
+                      await db.addOrUpdateNote(note);
                     });
+
+                    showDialog<void>(
+                      context: context,
+                      barrierDismissible: false, // user must tap button!
+                      builder: (context) {
+                        return AlertDialog(
+                            title:
+                                Text(sl?.getText('messageLabel') ?? 'Message'),
+                            content: Text((sl?.getText('successImportLabel') ??
+                                    'success') +
+                                (notes.length.toString())),
+                            actions: <Widget>[
+                              TextButton(
+                                  child: Text(sl?.getText('noticed') ?? 'OK'),
+                                  onPressed: () => Navigator.of(context).pop())
+                            ]);
+                      },
+                    );
                   })
             ],
           ),
           body: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              Expanded(
-                flex: 1,
-                child: TextFormField(
-                  controller: _textCtlr,
-                  onChanged: (val) =>
-                      setState(() => _restore_disabled = val.isEmpty),
-                  maxLines: 100,
-                  textCapitalization: TextCapitalization.sentences,
-                ),
-              ),
-              NumberPuzzles()
+              TextFormField(
+                controller: _textCtlr,
+                onChanged: (val) =>
+                    setState(() => _restore_disabled = val.isEmpty),
+                keyboardType: TextInputType.multiline,
+                maxLines: null,
+                textCapitalization: TextCapitalization.sentences,
+              )
             ],
           )),
     );

@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
+import 'package:lorisun_note/screen/NumberPuzzles.dart';
 import 'package:provider/provider.dart';
 import 'package:async/async.dart';
 
@@ -9,7 +10,7 @@ import 'changenotifier/ThemeChangeNotifier.dart';
 import 'service/NoteAccessSqlite.dart';
 import 'model/Config.dart';
 import 'screen/NoteItem.dart';
-import 'screen/notelanding/NoteLanding.dart';
+import 'screen/NoteLanding.dart';
 import 'screen/Login.dart';
 import 'screen/Backup.dart';
 
@@ -23,7 +24,7 @@ class NoteApp extends StatelessWidget {
 
       Config cfgPrimarySwatch = await db.getConfig(Config.primarySwatch);
       tcn.setTheme(ThemeData(
-        primarySwatch: Colors.primaries[int.parse(cfgPrimarySwatch.value)],
+        primarySwatch: Colors.primaries[int.parse(cfgPrimarySwatch.value!)],
         visualDensity: VisualDensity.adaptivePlatformDensity,
       ));
 
@@ -46,12 +47,12 @@ class NoteApp extends StatelessWidget {
               WidgetsBinding.instance.focusManager.primaryFocus?.unfocus();
             },
             child: MaterialApp(
-                localeResolutionCallback:
-                    (Locale locale, Iterable<Locale> supportedLocales) {
-                  for (var value in supportedLocales) {
-                    if (locale.languageCode == value.languageCode) return value;
+                localeResolutionCallback: (locale, supportedLocales) {
+                  for (var supportedLocale in supportedLocales) {
+                    if (supportedLocale.languageCode == locale?.languageCode) {
+                      return supportedLocale;
+                    }
                   }
-
                   return supportedLocales.first;
                 },
                 localizationsDelegates: [
@@ -69,9 +70,10 @@ class NoteApp extends StatelessWidget {
                 routes: <String, WidgetBuilder>{
                   Login.routeName: (context) => Login(),
                   NoteLanding.routeName: (context) => NoteLanding(
-                      title: SimpleLocalizations.of(context).getText('title')),
+                      title: SimpleLocalizations.of(context)?.getText('title')),
                   NoteItem.routeName: (context) => NoteItem(),
-                  Backup.routeName: (context) => Backup()
+                  Backup.routeName: (context) => Backup(),
+                  NumberPuzzles.routeName: (context) => NumberPuzzles()
                 }),
           );
         });

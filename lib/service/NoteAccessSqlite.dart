@@ -20,7 +20,7 @@ class NoteAccessSqlite {
     return _noteAccessSqlite;
   }
 
-  static Database _database;
+  static Database? _database;
   final AsyncMemoizer _memoizer = AsyncMemoizer();
   final String _dbFileName = 'ls_note.db';
   final List<String> _initSQLs = [
@@ -55,7 +55,7 @@ class NoteAccessSqlite {
   ];
 
   bool authSuccess = false;
-  String _dbPath;
+  String? _dbPath;
 
   Future<Database> init() async {
     if (_database == null) {
@@ -67,7 +67,7 @@ class NoteAccessSqlite {
         _dbPath = join(dbFolder, _dbFileName);
         ////print(_dbPath);
 
-        _database = await openDatabase(_dbPath, version: 1,
+        _database = await openDatabase(_dbPath!, version: 1,
             onCreate: (Database db, int version) async {
           for (String sql in _initSQLs) {
             await db.execute(sql);
@@ -75,12 +75,12 @@ class NoteAccessSqlite {
         });
       });
     }
-    return _database;
+    return _database!;
   }
 
   Future<Config> getConfig(String key) async {
     List<Map<String, dynamic>> jsons =
-        await _database.rawQuery('select * from config where name=?', [key]);
+        await _database!.rawQuery('select * from config where name=?', [key]);
 
     return jsons.map((json) => Config.fromJsonMap(json)).toList().first;
   }
@@ -88,7 +88,7 @@ class NoteAccessSqlite {
   void setConfig(String name, String value) {
     //print('setConfig - $name = $value');
 
-    _database.rawUpdate(
+    _database!.rawUpdate(
       '''
       UPDATE config
       SET value = ?
@@ -121,17 +121,28 @@ class NoteAccessSqlite {
 
     //print('sql - $sql, paramValues - $paramValues');
 
-    return _database.rawQuery(sql, paramValues);
+    return _database!.rawQuery(sql, paramValues);
   }
 
   Future<int> getNoteCount() async {
     final List<Map<String, dynamic>> jsons =
-        await _database.rawQuery("select count(*) as total from notes");
+        await _database!.rawQuery("select count(*) as total from notes");
     return jsons[0]['total'];
   }
 
+  Future<void> addOrUpdateNote(Note note) async {
+    _database!.rawQuery('select * from notes where id=? and title=?',
+        [note.id, note.title]).then((value) async {
+      if (value.length > 0) {
+        await updateNote(note);
+      } else {
+        await addNote(note);
+      }
+    });
+  }
+
   Future<void> addNote(Note note) async {
-    await _database.transaction((Transaction txn) async {
+    await _database!.transaction((Transaction txn) async {
       await txn.rawInsert('''
           INSERT INTO notes
             (title, content, sequence, isDone, targetDate)
@@ -141,13 +152,13 @@ class NoteAccessSqlite {
               "${note.content}",
               "${note.sequence}",
               ${note.isDone ? 1 : 0}, 
-              ${note.targetDate.millisecondsSinceEpoch}
+              ${note.targetDate?.millisecondsSinceEpoch}
             )''');
     });
   }
 
   Future<void> toggleNoteItem(Note note) async {
-    await _database.rawUpdate(
+    await _database!.rawUpdate(
       '''
       UPDATE notes
       SET isDone = ?
@@ -156,9 +167,8 @@ class NoteAccessSqlite {
     );
   }
 
-  Future<void> updateNoteItemSequence(int id, num sequence) async {
-    //print('updateNoteItemSequence $id - $sequence ');
-    await _database.rawUpdate(
+  Future<void> updateNoteItemSequence(int? id, num? sequence) async {
+    await _database!.rawUpdate(
       '''
       UPDATE notes
       SET sequence = ?
@@ -169,7 +179,7 @@ class NoteAccessSqlite {
 
   Future<void> updateNoteItemContent(int id, String content) async {
     //print('updateNoteItemContent $id - $content ');
-    await _database.rawUpdate(
+    await _database!.rawUpdate(
       '''
       UPDATE notes
       SET content = ?
@@ -178,11 +188,28 @@ class NoteAccessSqlite {
     );
   }
 
+  Future<void> updateNote(Note note) async {
+    await _database!.rawUpdate(
+      '''
+      UPDATE notes
+      SET content = ?, title = ?, sequence = ?, isDone = ?, targetDate = ?
+      WHERE id = ?''',
+      [
+        note.content,
+        note.title,
+        note.sequence,
+        note.isDone,
+        note.targetDate?.millisecondsSinceEpoch,
+        note.id
+      ],
+    );
+  }
+
   Future<void> deleteNoteItem(Note note) async {
-    await _database.rawDelete('''
+    await _database!.rawDelete('''
         DELETE FROM notes
         WHERE id = ?
-      ''', [note?.id]);
+      ''', [note.id]);
   }
 
   NoteAccessSqlite._internal();

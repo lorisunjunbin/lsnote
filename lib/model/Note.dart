@@ -1,14 +1,14 @@
 class Note {
-  final int id;
-  final String title;
-  final String content;
-  num sequence;
+  final int? id;
+  final String? title;
+  final String? content;
+  num? sequence;
 
   // SQLite doesn't supprot boolean. Use INTEGER/BIT (0/1 values).
-  bool isDone;
+  bool isDone = false;
 
   // SQLite doesn't supprot DateTime. Store them as INTEGER (millisSinceEpoch).
-  final DateTime targetDate;
+  final DateTime? targetDate;
 
   Note(
       {this.id,
@@ -33,7 +33,7 @@ class Note {
         'content': content,
         'sequence': sequence,
         'isDone': isDone ? 1 : 0,
-        'targetDate': targetDate.millisecondsSinceEpoch,
+        'targetDate': targetDate?.millisecondsSinceEpoch,
       };
 
   Note.fromJsonMapThin(Map<String, dynamic> map)
@@ -50,6 +50,6 @@ class Note {
         'c': content,
         's': sequence,
         'd': isDone ? 1 : 0,
-        'td': targetDate.millisecondsSinceEpoch,
+        'td': targetDate?.millisecondsSinceEpoch,
       };
 }

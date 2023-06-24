@@ -1,10 +1,8 @@
 import 'package:flutter/material.dart';
-import 'package:local_auth/auth_strings.dart';
 import 'package:local_auth/local_auth.dart';
 
 import '../i18n/SimpleLocalizations.dart';
-import '../service/NoteAccessSqlite.dart';
-import 'notelanding/NoteLanding.dart';
+import 'NoteLanding.dart';
 
 class Login extends StatefulWidget {
   static final String routeName = '/Login';
@@ -14,38 +12,43 @@ class Login extends StatefulWidget {
 }
 
 class _LoginState extends State<Login> {
-  LocalAuthentication _localAuth;
+  final LocalAuthentication _localAuth = LocalAuthentication();
 
   @override
   void initState() {
     super.initState();
-    this._localAuth = LocalAuthentication();
   }
 
-  Future<void> _auth(context) async {
-    db.authSuccess = false;
+  Future<bool> _auth(context) async {
+    if (!await deviceSupported()) {
+      return true;
+    }
 
-    if (await this._localAuth.canCheckBiometrics == false) {
-      print('Your device is NOT capable of checking biometrics.\n'
-          'Require android 6.0+ and fingerprint sensor.');
+    if (await authenticateIsAvailable()) {
+      try {
+        final reason = SimpleLocalizations.of(context)!.getText('reason')!;
+        return await this._localAuth.authenticate(
+            localizedReason: reason,
+            options: const AuthenticationOptions(
+                biometricOnly: true, stickyAuth: true));
+      } catch (e) {
+        print(e.toString());
+      }
     }
-    final sl = SimpleLocalizations.of(context);
-    try {
-      db.authSuccess = await this._localAuth.authenticateWithBiometrics(
-          localizedReason: sl.getText('reason'),//'localizedReason',
-          stickyAuth: true,
-          androidAuthStrings: AndroidAuthMessages(
-            signInTitle: sl.getText('signInTitle'),
-            fingerprintHint: ' ',
-          ));
-    } catch (e) {
-      print(e.toString());
-    }
+    return false;
+  }
+
+  Future<bool> deviceSupported() async {
+    return await _localAuth.isDeviceSupported();
+  }
+
+  Future<bool> authenticateIsAvailable() async {
+    return await _localAuth.canCheckBiometrics;
   }
 
   Future<void> _auth_login(context) async {
-    await this._auth(context);
-    if (db.authSuccess) {
+    final success = await this._auth(context);
+    if (success) {
       Navigator.of(context).pushReplacementNamed(NoteLanding.routeName);
     }
   }

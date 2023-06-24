@@ -36,7 +36,7 @@ class GuessitemChangeNotifier with ChangeNotifier {
               duration: _guessItems.length > 0
                   ? Duration(
                       milliseconds: DateTime.now().millisecondsSinceEpoch -
-                          _guessItems.last.tryTime.millisecondsSinceEpoch)
+                          _guessItems.last.tryTime!.millisecondsSinceEpoch)
                   : Duration(milliseconds: 0)));
     }
 

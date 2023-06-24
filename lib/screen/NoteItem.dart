@@ -3,7 +3,7 @@ import 'package:flutter/material.dart';
 import '../i18n/SimpleLocalizations.dart';
 import '../model/Note.dart';
 import '../service/NoteAccessSqlite.dart';
-import 'notelanding/NoteLanding.dart';
+import 'NoteLanding.dart';
 
 class NoteItem extends StatefulWidget {
   static final String routeName = '/NoteItem';
@@ -13,7 +13,7 @@ class NoteItem extends StatefulWidget {
 }
 
 class _NoteItemState extends State<NoteItem> {
-  static DateTime _datetime = DateTime.now();
+  static DateTime _datetime = DateTime.now().add(Duration(days: 1));
   var _titleCtl = TextEditingController();
   var _contentCtl = TextEditingController();
 
@@ -36,7 +36,7 @@ class _NoteItemState extends State<NoteItem> {
   @override
   Widget build(BuildContext context) {
     Color _primaryColor = Theme.of(context).primaryColorDark;
-    SimpleLocalizations sl = SimpleLocalizations.of(context);
+    SimpleLocalizations sl = SimpleLocalizations.of(context)!;
 
     return WillPopScope(
       onWillPop: _onBackPressed,
@@ -51,12 +51,10 @@ class _NoteItemState extends State<NoteItem> {
         body: Padding(
             padding: const EdgeInsets.all(32.0),
             child: ListView(children: <Widget>[
+              _buildDatepickerMaterialButton(context, sl, _primaryColor),
               _buildNoteTitleTextField(context, sl),
               _buildNoteDetailTextField(sl),
-              Text(''),
-              _buildDatepickerMaterialButton(context, sl, _primaryColor),
-              const Divider(),
-              _buildSaveIconButton(_primaryColor, context)
+              _buildSaveIconButton(_primaryColor, context),
             ])),
       ),
     );
@@ -66,7 +64,7 @@ class _NoteItemState extends State<NoteItem> {
       BuildContext context, SimpleLocalizations sl) {
     return TextField(
       keyboardType: TextInputType.text,
-      style: Theme.of(context).textTheme.headline5,
+      style: Theme.of(context).textTheme.bodyLarge,
       decoration: InputDecoration(
         labelText: sl.getText('titleLabel'),
       ),
@@ -76,7 +74,8 @@ class _NoteItemState extends State<NoteItem> {
 
   TextField _buildNoteDetailTextField(SimpleLocalizations sl) {
     return TextField(
-      maxLines: 5,
+      keyboardType: TextInputType.multiline,
+      maxLines: null,
       textCapitalization: TextCapitalization.sentences,
       decoration: InputDecoration(
         labelText: sl.getText('contentLabel'),
@@ -104,7 +103,7 @@ class _NoteItemState extends State<NoteItem> {
           }
         });
       },
-      child: Text('${_datetime?.toString()?.substring(0, 10)}',
+      child: Text('${_datetime.toString().substring(0, 10)}',
           style: new TextStyle(
             fontSize: 22.0,
             color: _primaryColor,
@@ -116,10 +115,9 @@ class _NoteItemState extends State<NoteItem> {
     return IconButton(
         icon: Icon(Icons.save_rounded),
         color: _primaryColor,
-        iconSize: 60,
+        iconSize: 50,
         onPressed: () async {
-          if (_titleCtl.value.text == null || _titleCtl.value.text.isEmpty)
-            return;
+          if (_titleCtl.value.text.isEmpty) return;
 
           int total = await db.getNoteCount();
 
@@ -127,7 +125,7 @@ class _NoteItemState extends State<NoteItem> {
               title: _titleCtl.value.text,
               content: _contentCtl.value.text,
               sequence: total * -1000.0,
-              isDone: _datetime.isBefore(DateTime.now()) ?? true,
+              isDone: _datetime.isBefore(DateTime.now()),
               targetDate: _datetime));
 
           _back2Home(context);
