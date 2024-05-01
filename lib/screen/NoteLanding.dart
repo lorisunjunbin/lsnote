@@ -185,8 +185,9 @@ class _NoteLandingState extends State<NoteLanding> {
                 height: 50.0,
                 width: 50.0,
                 child: FloatingActionButton(
+                  backgroundColor: Theme.of(context).primaryColorLight,
                   onPressed: _onBtnPress,
-                  child: Icon(Icons.add),
+                  child: Icon(Icons.add, color: Theme.of(context).primaryColorDark),
                 ),
               ),
               // This trailing comma makes auto-formatting nicer for build methods.
@@ -198,10 +199,12 @@ class _NoteLandingState extends State<NoteLanding> {
   BottomAppBar _buildBottomAppBar(BuildContext context, SimpleLocalizations sl,
       ThemeData theme, SwitcherChangeNotifier switcherProvider) {
     return BottomAppBar(
+        height: 66,
         shape: CircularNotchedRectangle(),
-        color: Theme.of(context).primaryColor,
+        color: Theme.of(context).primaryColorLight,
         child: Row(children: <Widget>[
           IconButton(
+            color: Theme.of(context).primaryColorDark,
             icon: Icon(Icons.save_sharp),
             onPressed: () async {
               if (_currentNote.id != null &&
@@ -221,6 +224,7 @@ class _NoteLandingState extends State<NoteLanding> {
           ),
           IconButton(
               icon: const Icon(Icons.delete_sharp),
+              color: Theme.of(context).primaryColorDark,
               onPressed: () {
                 if (this._currentNote.isDone) {
                   showDialog<void>(
@@ -250,10 +254,12 @@ class _NoteLandingState extends State<NoteLanding> {
               }),
           IconButton(
               icon: const Icon(Icons.import_export_sharp),
+              color: Theme.of(context).primaryColorDark,
               onPressed: () async =>
                   Navigator.of(context).pushReplacementNamed(Backup.routeName)),
           IconButton(
               icon: const Icon(Icons.color_lens_outlined),
+              color: Theme.of(context).primaryColorDark,
               onPressed: () {
                 showDialog<void>(
                     context: context,
@@ -285,12 +291,18 @@ class _NoteLandingState extends State<NoteLanding> {
               }),
           IconButton(
               icon: const Icon(Icons.gamepad_outlined),
+              color: Theme.of(context).primaryColorDark,
               onPressed: () {
                 Navigator.of(context)
                     .pushReplacementNamed(NumberPuzzles.routeName);
               }),
           Switch(
               value: switcherProvider.isHiddenDone(),
+              activeColor: Theme.of(context).primaryColorDark,
+              inactiveTrackColor: Theme.of(context).primaryColorLight,
+
+
+
               onChanged: (bool value) => setState(() {
                     switcherProvider.setHiddenDone(value);
                     db.setConfig(Config.hiddenDone, value ? '1' : '0');
@@ -308,12 +320,11 @@ class _NoteLandingState extends State<NoteLanding> {
           checkColor: theme.primaryColorDark,
           key: Key('${item.id}'),
           value: item.isDone,
-          // isThreeLine: true,
           title: Row(children: [
             Text(
               '${item.title}',
               style: TextStyle(
-                  color: theme.primaryColor,
+                  color: theme.primaryColorDark,
                   fontSize: 20.0,
                   fontWeight: FontWeight.bold),
             ),
@@ -321,7 +332,7 @@ class _NoteLandingState extends State<NoteLanding> {
             Text(
               '${item.targetDate.toString().substring(0, 10)}',
               style: TextStyle(
-                  color: theme.primaryColor,
+                  color: theme.primaryColorLight,
                   fontSize: 8.0,
                   fontWeight: FontWeight.normal),
             )
