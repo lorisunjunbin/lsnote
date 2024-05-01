@@ -1,7 +1,7 @@
 # lsnote
 
 Simplest native note app built by Flutter, tested for Android and self used on Note20U5G and
-S22Ultra.
+S22Ultra and S24U..
 
 - sqlite for data storage.
 - import/export data manually(backup before remove the app), standard json format
