@@ -18,10 +18,6 @@ class _NoteItemState extends State<NoteItem> {
   var _titleCtl = TextEditingController();
   var _contentCtl = TextEditingController();
 
-  void _back2Home(BuildContext context) {
-    Navigator.popAndPushNamed(context, NoteLanding.routeName);
-  }
-
   @override
   void dispose() {
     _contentCtl.dispose();
@@ -50,14 +46,18 @@ class _NoteItemState extends State<NoteItem> {
             ),
           ),
           elevation: 2.0,
+          title: Text(sl.getText('addNote') ?? 'Add Note'),
         ),
         body: Padding(
-            padding: const EdgeInsets.all(32.0),
+            padding: const EdgeInsets.all(24.0),
             child: ListView(children: <Widget>[
-              _buildDatepickerMaterialButton(context, sl, _primaryColor),
+              _buildDatepickerCard(context, sl, _primaryColor),
+              const SizedBox(height: 24),
               _buildNoteTitleTextField(context, sl),
+              const SizedBox(height: 20),
               _buildNoteDetailTextField(sl),
-              _buildSaveIconButton(_primaryColor, context),
+              const SizedBox(height: 32),
+              _buildSaveButton(_primaryColor, context, sl),
             ])),
       ),
     );
@@ -67,9 +67,16 @@ class _NoteItemState extends State<NoteItem> {
       BuildContext context, SimpleLocalizations sl) {
     return TextField(
       keyboardType: TextInputType.text,
-      style: Theme.of(context).textTheme.bodyLarge,
+      style: Theme.of(context).textTheme.bodyLarge?.copyWith(fontSize: 18),
       decoration: InputDecoration(
         labelText: sl.getText('titleLabel'),
+        border: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(12),
+        ),
+        filled: true,
+        fillColor: Colors.grey[50],
+        contentPadding:
+            const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
       ),
       controller: _titleCtl,
     );
@@ -78,49 +85,120 @@ class _NoteItemState extends State<NoteItem> {
   TextField _buildNoteDetailTextField(SimpleLocalizations sl) {
     return TextField(
       keyboardType: TextInputType.multiline,
-      maxLines: null,
+      maxLines: 8,
+      minLines: 5,
       textCapitalization: TextCapitalization.sentences,
       decoration: InputDecoration(
         labelText: sl.getText('contentLabel'),
+        alignLabelWithHint: true,
+        border: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(12),
+        ),
+        filled: true,
+        fillColor: Colors.grey[50],
+        contentPadding:
+            const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
       ),
       controller: _contentCtl,
     );
   }
 
-  MaterialButton _buildDatepickerMaterialButton(
+  Widget _buildDatepickerCard(
       BuildContext context, SimpleLocalizations sl, Color _primaryColor) {
-    return MaterialButton(
-      onPressed: () {
-        showDatePicker(
-          context: context,
-          initialDate: _datetime,
-          firstDate: DateTime.parse("2020-01-01"),
-          lastDate: DateTime.parse("2030-12-31"),
-          cancelText: sl.getText('cancelLabel'),
-          confirmText: sl.getText('confirmLabel'),
-        ).then((value) {
-          if (value != null) {
-            setState(() {
-              _datetime = value;
-            });
-          }
-        });
-      },
-      child: Text('${_datetime.toString().substring(0, 10)}',
-          style: new TextStyle(
-            fontSize: 22.0,
-            color: _primaryColor,
-          )),
+    return Card(
+      elevation: 2,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(12),
+        onTap: () {
+          showDatePicker(
+            context: context,
+            initialDate: _datetime,
+            firstDate: DateTime.parse("2020-01-01"),
+            lastDate: DateTime.parse("2030-12-31"),
+            cancelText: sl.getText('cancelLabel'),
+            confirmText: sl.getText('confirmLabel'),
+          ).then((value) {
+            if (value != null) {
+              setState(() {
+                _datetime = value;
+              });
+            }
+          });
+        },
+        child: Padding(
+          padding: const EdgeInsets.all(16.0),
+          child: Row(
+            children: [
+              Icon(Icons.calendar_today_rounded,
+                  color: _primaryColor, size: 28),
+              const SizedBox(width: 16),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      sl.getText('targetDate') ?? 'Target Date',
+                      style: TextStyle(
+                        fontSize: 14,
+                        color: Colors.grey[600],
+                        fontWeight: FontWeight.w400,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      '${_datetime.toString().substring(0, 10)}',
+                      style: TextStyle(
+                        fontSize: 20,
+                        fontWeight: FontWeight.w600,
+                        color: _primaryColor,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              Icon(Icons.arrow_forward_ios_rounded,
+                  color: Colors.grey[400], size: 18),
+            ],
+          ),
+        ),
+      ),
     );
   }
 
-  IconButton _buildSaveIconButton(Color _primaryColor, BuildContext context) {
-    return IconButton(
-        icon: Icon(Icons.save_rounded),
-        color: _primaryColor,
-        iconSize: 50,
+  Widget _buildSaveButton(
+      Color _primaryColor, BuildContext context, SimpleLocalizations sl) {
+    return SizedBox(
+      width: double.infinity,
+      height: 56,
+      child: ElevatedButton.icon(
+        icon: const Icon(Icons.save_rounded, size: 24),
+        label: Text(
+          sl.getText('saveLabel') ?? 'Save',
+          style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w600),
+        ),
+        style: ElevatedButton.styleFrom(
+          backgroundColor: _primaryColor,
+          foregroundColor: Colors.white,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(12),
+          ),
+          elevation: 2,
+        ),
         onPressed: () async {
-          if (_titleCtl.value.text.isEmpty) return;
+          if (_titleCtl.value.text.isEmpty) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content:
+                    Text(sl.getText('titleRequired') ?? 'Title is required'),
+                duration: const Duration(seconds: 2),
+                behavior: SnackBarBehavior.floating,
+              ),
+            );
+            return;
+          }
 
           int total = await db.getNoteCount();
 
@@ -136,6 +214,8 @@ class _NoteItemState extends State<NoteItem> {
           setState(() {
             _datetime = DateTime.now();
           });
-        });
+        },
+      ),
+    );
   }
 }
