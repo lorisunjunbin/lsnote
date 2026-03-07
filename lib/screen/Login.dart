@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:local_auth/local_auth.dart';
 
@@ -13,56 +14,96 @@ class Login extends StatefulWidget {
 
 class _LoginState extends State<Login> {
   final LocalAuthentication _localAuth = LocalAuthentication();
+  bool _isAuthenticating = false;
+  String? _errorText;
 
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      _authLogin(context);
+    });
   }
 
-  Future<bool> _auth(context) async {
-    if (!await deviceSupported()) {
+  Future<bool> _auth(BuildContext context) async {
+    if (kIsWeb) {
       return true;
     }
 
-    if (await authenticateIsAvailable()) {
-      try {
-        final reason = SimpleLocalizations.of(context)!.getText('reason')!;
-        return await this._localAuth.authenticate(
-            localizedReason: reason,
-            options: const AuthenticationOptions(
-                biometricOnly: true, stickyAuth: true));
-      } catch (e) {
-        print(e.toString());
-      }
+    final supported = await _localAuth.isDeviceSupported();
+    final canCheckBiometrics = await _localAuth.canCheckBiometrics;
+    if (!supported || !canCheckBiometrics) {
+      return true;
     }
-    return false;
+
+    try {
+      final reason = SimpleLocalizations.of(context)!.getText('reason')!;
+      return await _localAuth.authenticate(
+        localizedReason: reason,
+        biometricOnly: true,
+      );
+    } catch (_) {
+      _setError('Authentication failed. Please try again.');
+      return false;
+    }
   }
 
-  Future<bool> deviceSupported() async {
-    return await _localAuth.isDeviceSupported();
+  void _setError(String text) {
+    if (!mounted) return;
+    setState(() {
+      _errorText = text;
+    });
   }
 
-  Future<bool> authenticateIsAvailable() async {
-    return await _localAuth.canCheckBiometrics;
-  }
+  Future<void> _authLogin(BuildContext context) async {
+    if (_isAuthenticating) return;
+    setState(() {
+      _isAuthenticating = true;
+      _errorText = null;
+    });
 
-  Future<void> _auth_login(context) async {
-    final success = await this._auth(context);
+    final success = await _auth(context);
+    if (!mounted) return;
+
+    setState(() {
+      _isAuthenticating = false;
+    });
+
     if (success) {
       Navigator.of(context).pushReplacementNamed(NoteLanding.routeName);
     }
   }
 
   @override
-  Widget build(context) {
-    _auth_login(context);
+  Widget build(BuildContext context) {
     return Scaffold(
-        body: Center(
-            child: IconButton(
-      color: Theme.of(context).primaryColorDark,
-      icon: Icon(Icons.fingerprint),
-      iconSize: 80,
-      onPressed: () async => _auth_login(context),
-    )));
+      body: Center(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            if (_isAuthenticating) const CircularProgressIndicator(),
+            if (!_isAuthenticating)
+              IconButton(
+                color: Theme.of(context).primaryColorDark,
+                icon: const Icon(Icons.fingerprint),
+                iconSize: 80,
+                onPressed: () => _authLogin(context),
+              ),
+            if (_errorText != null) ...[
+              const SizedBox(height: 12),
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 24),
+                child: Text(
+                  _errorText!,
+                  textAlign: TextAlign.center,
+                  style: TextStyle(color: Theme.of(context).colorScheme.error),
+                ),
+              ),
+            ]
+          ],
+        ),
+      ),
+    );
   }
 }

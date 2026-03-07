@@ -107,6 +107,8 @@ class NoteAccessSqlite {
     return getNotes({});
   }
 
+  static const int sequenceStep = 1024;
+
   Future<List<Map<String, dynamic>>> getNotesAllInJson(
       Map<String, dynamic> params) {
     String sql = 'SELECT * FROM notes ';
@@ -117,9 +119,7 @@ class NoteAccessSqlite {
         paramValues.add(value);
       }
     });
-    sql += ' order by sequence ';
-
-    //print('sql - $sql, paramValues - $paramValues');
+    sql += ' order by sequence, id ';
 
     return _database!.rawQuery(sql, paramValues);
   }
@@ -210,6 +210,25 @@ class NoteAccessSqlite {
         DELETE FROM notes
         WHERE id = ?
       ''', [note.id]);
+  }
+
+  Future<void> renumberNoteSequences(List<Note> notes,
+      {int step = sequenceStep}) async {
+    await _database!.transaction((Transaction txn) async {
+      final batch = txn.batch();
+      for (var i = 0; i < notes.length; i++) {
+        final sequence = i * step;
+        notes[i].sequence = sequence;
+        batch.rawUpdate(
+          '''
+      UPDATE notes
+      SET sequence = ?
+      WHERE id = ?''',
+          [sequence, notes[i].id],
+        );
+      }
+      await batch.commit(noResult: true);
+    });
   }
 
   NoteAccessSqlite._internal();

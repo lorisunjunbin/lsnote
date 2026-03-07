@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../i18n/SimpleLocalizations.dart';
 import '../model/Note.dart';
 import '../service/NoteAccessSqlite.dart';
+import '../utils/NavigationHelper.dart';
 import 'NoteLanding.dart';
 
 class NoteItem extends StatefulWidget {
@@ -21,11 +22,6 @@ class _NoteItemState extends State<NoteItem> {
     Navigator.popAndPushNamed(context, NoteLanding.routeName);
   }
 
-  Future<bool> _onBackPressed() {
-    Navigator.popAndPushNamed(context, NoteLanding.routeName);
-    return Future.value(true);
-  }
-
   @override
   void dispose() {
     _contentCtl.dispose();
@@ -38,13 +34,20 @@ class _NoteItemState extends State<NoteItem> {
     Color _primaryColor = Theme.of(context).primaryColorDark;
     SimpleLocalizations sl = SimpleLocalizations.of(context)!;
 
-    return WillPopScope(
-      onWillPop: _onBackPressed,
+    return PopScope(
+      canPop: false,
+      onPopInvokedWithResult: NavigationHelper.createPopCallback(
+        context,
+        NoteLanding.routeName,
+      ),
       child: Scaffold(
         appBar: AppBar(
           leading: IconButton(
             icon: const Icon(Icons.arrow_back_ios_rounded),
-            onPressed: () => _back2Home(context),
+            onPressed: () => NavigationHelper.replaceTo(
+              context,
+              NoteLanding.routeName,
+            ),
           ),
           elevation: 2.0,
         ),
@@ -124,11 +127,11 @@ class _NoteItemState extends State<NoteItem> {
           db.addNote(Note(
               title: _titleCtl.value.text,
               content: _contentCtl.value.text,
-              sequence: total * -1000.0,
-              isDone: _datetime.isBefore(DateTime.now()),
+              sequence: total * -NoteAccessSqlite.sequenceStep,
+              isDone: false,
               targetDate: _datetime));
 
-          _back2Home(context);
+          NavigationHelper.replaceTo(context, NoteLanding.routeName);
 
           setState(() {
             _datetime = DateTime.now();
