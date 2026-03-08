@@ -152,22 +152,19 @@ class _NoteLandingState extends State<NoteLanding> {
               ),
               body: isEmpty
                   ? _buildEmptyState(colorScheme, sl)
-                  : Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 12),
-                      child: ReorderableListView(
+                  : ReorderableListView(
                         onReorder: _onReorder,
                         buildDefaultDragHandles: false,
                         proxyDecorator: _proxyDecorator,
                         children: _listTiles,
                       ),
-                    ),
               floatingActionButtonLocation:
                   FloatingActionButtonLocation.endFloat,
-              floatingActionButton: FloatingActionButton.extended(
+              floatingActionButton: FloatingActionButton(
                 onPressed: _onBtnPress,
                 elevation: 4,
-                icon: const Icon(Icons.add),
-                label: Text(sl?.getText('addNote') ?? 'New Note'),
+                mini: true,
+                child: const Icon(Icons.add),
               ),
               bottomNavigationBar:
                   _buildBottomNavigationBar(context, sl!, colorScheme, switcherProvider));
@@ -182,39 +179,61 @@ class _NoteLandingState extends State<NoteLanding> {
       decoration: BoxDecoration(
         color: colorScheme.surfaceContainerHighest,
       ),
-      child: TextField(
-        onChanged: (v) async {
-          if (v.isNotEmpty) {
-            _items = await db.getNotes({
-              ' where ( title like ? ': '%$v%',
-              ' or content like ?) ': '%$v%',
-              switcherProvider.isHiddenDone()
-                  ? ' and isDone=? '
-                  : '': switcherProvider.isHiddenDone() ? 0 : null
-            });
-            setState(() {});
-          } else {
-            _updateUI(context);
-          }
-        },
-        decoration: InputDecoration(
-          hintText: sl?.getText('search'),
-          hintStyle: TextStyle(color: colorScheme.onSurfaceVariant),
-          prefixIcon: Icon(Icons.search, color: colorScheme.onSurfaceVariant),
-          suffixIcon: _items.isNotEmpty
-              ? IconButton(
-                  icon: Icon(Icons.clear, color: colorScheme.onSurfaceVariant),
-                  onPressed: () {
-                    _updateUI(context);
-                  },
-                )
-              : null,
-          border: InputBorder.none,
-          contentPadding: const EdgeInsets.symmetric(
-            horizontal: 16,
-            vertical: 10,
+      child: Row(
+        children: [
+          Expanded(
+            child: TextField(
+              onChanged: (v) async {
+                if (v.isNotEmpty) {
+                  _items = await db.getNotes({
+                    ' where ( title like ? ': '%$v%',
+                    ' or content like ?) ': '%$v%',
+                    switcherProvider.isHiddenDone()
+                        ? ' and isDone=? '
+                        : '': switcherProvider.isHiddenDone() ? 0 : null
+                  });
+                  setState(() {});
+                } else {
+                  _updateUI(context);
+                }
+              },
+              decoration: InputDecoration(
+                hintText: sl?.getText('search'),
+                hintStyle: TextStyle(color: colorScheme.onSurfaceVariant),
+                prefixIcon: Icon(Icons.search, color: colorScheme.onSurfaceVariant),
+                suffixIcon: _items.isNotEmpty
+                    ? IconButton(
+                        icon: Icon(Icons.clear, color: colorScheme.onSurfaceVariant),
+                        onPressed: () {
+                          _updateUI(context);
+                        },
+                      )
+                    : null,
+                border: InputBorder.none,
+                contentPadding: const EdgeInsets.symmetric(
+                  horizontal: 16,
+                  vertical: 10,
+                ),
+              ),
+            ),
           ),
-        ),
+          // 隐藏已完成开关
+          Padding(
+            padding: const EdgeInsets.only(right: 12),
+            child: Transform.scale(
+              scale: 0.8,
+              child: Switch(
+                value: switcherProvider.isHiddenDone(),
+                onChanged: (bool value) {
+                  setState(() {
+                    switcherProvider.setHiddenDone(value);
+                    db.setConfig(Config.hiddenDone, value ? '1' : '0');
+                  });
+                },
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -281,45 +300,7 @@ class _NoteLandingState extends State<NoteLanding> {
   /// Material 3 底部导航栏
   Widget _buildBottomNavigationBar(BuildContext context, SimpleLocalizations sl,
       ColorScheme colorScheme, SwitcherChangeNotifier switcherProvider) {
-    return Container(
-      decoration: BoxDecoration(
-        border: Border(
-          top: BorderSide(
-            color: colorScheme.outlineVariant,
-            width: 1,
-          ),
-        ),
-      ),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          // 隐藏已完成开关
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-            child: Row(
-              children: [
-                Text(
-                  sl.getText('hiddenDoneLabel') ?? 'Hide completed',
-                  style: TextStyle(
-                    color: colorScheme.onSurfaceVariant,
-                    fontSize: 14,
-                  ),
-                ),
-                const Spacer(),
-                Switch(
-                  value: switcherProvider.isHiddenDone(),
-                  onChanged: (bool value) {
-                    setState(() {
-                      switcherProvider.setHiddenDone(value);
-                      db.setConfig(Config.hiddenDone, value ? '1' : '0');
-                    });
-                  },
-                ),
-              ],
-            ),
-          ),
-          // 底部导航
-          BottomNavigationBar(
+    return BottomNavigationBar(
             currentIndex: 0,
             onTap: (index) {
               switch (index) {
@@ -362,10 +343,7 @@ class _NoteLandingState extends State<NoteLanding> {
                 label: sl.getText('numberpuzzles') ?? 'Game',
               ),
             ],
-          ),
-        ],
-      ),
-    );
+          );
   }
 
   /// 处理保存操作
@@ -525,22 +503,23 @@ class _NoteLandingState extends State<NoteLanding> {
 
       return Padding(
         key: Key('${item.id}'),
-        padding: const EdgeInsets.symmetric(vertical: 6),
+        padding: const EdgeInsets.symmetric(vertical: 0),
         child: Card(
           elevation: 0,
           color: item.isDone
               ? colorScheme.surfaceContainerLowest
               : colorScheme.surfaceContainerLow,
-          shape:
-              RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+          shape: const RoundedRectangleBorder(
+              borderRadius: BorderRadius.zero,
+            ),
           child: Padding(
-            padding: const EdgeInsets.all(12),
+            padding: const EdgeInsets.all(6),
             child: Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
+              crossAxisAlignment: CrossAxisAlignment.center,
               children: [
                 // 复选框
                 Padding(
-                  padding: const EdgeInsets.only(top: 4),
+                  padding: EdgeInsets.zero,
                   child: Checkbox(
                     value: item.isDone,
                     onChanged: (bool? newValue) {
@@ -550,7 +529,7 @@ class _NoteLandingState extends State<NoteLanding> {
                     },
                   ),
                 ),
-                const SizedBox(width: 8),
+                const SizedBox(width: 4),
                 // 内容区域
                 Expanded(
                   child: Column(
@@ -566,7 +545,7 @@ class _NoteLandingState extends State<NoteLanding> {
                                 color: item.isDone
                                     ? colorScheme.onSurfaceVariant
                                     : colorScheme.onSurface,
-                                fontSize: 18,
+                                fontSize: 16,
                                 fontWeight: FontWeight.w600,
                               ),
                             ),
@@ -604,14 +583,13 @@ class _NoteLandingState extends State<NoteLanding> {
                           ),
                         ],
                       ),
-                      const SizedBox(height: 10),
+                      const SizedBox(height: 6),
                       // 内容输入框
                       TextField(
                         key: Key('${item.id}tf'),
                         controller: _ctrls['${item.id}cblt'],
                         keyboardType: TextInputType.multiline,
                         maxLines: null,
-                        enabled: !item.isDone,
                         style: TextStyle(
                           color: item.isDone
                               ? colorScheme.onSurfaceVariant
@@ -621,25 +599,25 @@ class _NoteLandingState extends State<NoteLanding> {
                         ),
                         decoration: InputDecoration(
                           border: InputBorder.none,
-                          contentPadding: const EdgeInsets.all(12),
+                          contentPadding: const EdgeInsets.all(8),
                           filled: true,
                           fillColor: item.isDone
                               ? colorScheme.surfaceContainerHighest
                               : colorScheme.surface,
-                          enabledBorder: OutlineInputBorder(
+                          enabledBorder: const OutlineInputBorder(
                             borderSide: BorderSide.none,
-                            borderRadius: BorderRadius.circular(12),
+                            borderRadius: BorderRadius.zero,
                           ),
-                          disabledBorder: OutlineInputBorder(
+                          disabledBorder: const OutlineInputBorder(
                             borderSide: BorderSide.none,
-                            borderRadius: BorderRadius.circular(12),
+                            borderRadius: BorderRadius.zero,
                           ),
                           focusedBorder: OutlineInputBorder(
                             borderSide: BorderSide(
                               color: colorScheme.primary,
                               width: 2,
                             ),
-                            borderRadius: BorderRadius.circular(12),
+                            borderRadius: BorderRadius.zero,
                           ),
                         ),
                         onTap: () => _currentNote = item,
