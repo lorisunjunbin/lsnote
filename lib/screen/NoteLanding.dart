@@ -11,6 +11,7 @@ import '../service/NoteAccessSqlite.dart';
 import '../model/Note.dart';
 import 'Backup.dart';
 import 'NoteItem.dart';
+import '../NoteApp.dart';
 
 class NoteLanding extends StatefulWidget {
   NoteLanding({Key? key, this.title}) : super(key: key);
@@ -30,6 +31,7 @@ class _NoteLandingState extends State<NoteLanding> {
   Note _currentNote = Note();
   Map<String, TextEditingController> _ctrls = {};
   bool _reorderInFlight = false;
+  int _currentColorIndex = 0;
 
   Future<void> _onReorder(int oldIndex, int newIndex) async {
     if (_reorderInFlight) return;
@@ -38,14 +40,12 @@ class _NoteLandingState extends State<NoteLanding> {
     final item = _items.removeAt(oldIndex);
     _items.insert(newIdx, item);
 
-    // Update UI in the same frame as drop to avoid old->new visual jump.
     setState(() {});
 
     _reorderInFlight = true;
     try {
       await db.renumberNoteSequences(_items, step: _sequenceStep);
     } catch (_) {
-      // If persistence fails, reload from DB to recover consistent order.
       await _reloadData(context);
       if (mounted) {
         setState(() {});
@@ -62,6 +62,8 @@ class _NoteLandingState extends State<NoteLanding> {
   Future<bool> _asyncInit(ctx) async {
     if (_items.isEmpty) {
       await _memoizer.runOnce(() async {
+        final cfgPrimarySwatch = await db.getConfig(Config.primarySwatch);
+        _currentColorIndex = int.parse(cfgPrimarySwatch.value!);
         _updateUI(ctx);
       });
     }
@@ -87,9 +89,12 @@ class _NoteLandingState extends State<NoteLanding> {
       String title, List<String> msgs, String buttonTxt) async {
     return showDialog<void>(
       context: context,
-      barrierDismissible: false, // user must tap button!
+      barrierDismissible: false,
       builder: (context) {
         return AlertDialog(
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(20),
+            ),
             title: Text(title),
             content: SingleChildScrollView(
                 child: ListBody(
@@ -97,6 +102,11 @@ class _NoteLandingState extends State<NoteLanding> {
             )),
             actions: <Widget>[
               TextButton(
+                  style: TextButton.styleFrom(
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                  ),
                   child: Text(buttonTxt),
                   onPressed: () => Navigator.of(context).pop())
             ]);
@@ -116,6 +126,7 @@ class _NoteLandingState extends State<NoteLanding> {
   Widget build(context) {
     final sl = SimpleLocalizations.of(context);
     final ThemeData theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
     final switcherProvider = Provider.of<SwitcherChangeNotifier>(context);
 
     switcherProvider.addListener(() {
@@ -132,221 +143,380 @@ class _NoteLandingState extends State<NoteLanding> {
           }
 
           List<Widget> _listTiles = _buildItemList(theme);
+          final isEmpty = _listTiles.isEmpty;
 
           return Scaffold(
               appBar: AppBar(
                 titleSpacing: 0,
-                title: Padding(
-                  padding: const EdgeInsets.symmetric(vertical: 8),
-                  child: TextField(
-                      onChanged: (v) async {
-                        if (v.isNotEmpty) {
-                          _items = await db.getNotes({
-                            ' where ( title like ? ': '%$v%',
-                            ' or content like ?) ': '%$v%',
-                            switcherProvider.isHiddenDone()
-                                ? ' and isDone=? '
-                                : '': switcherProvider.isHiddenDone() ? 0 : null
-                          });
-                          setState(() {});
-                        } else {
-                          _updateUI(context);
-                        }
-                      },
-                      decoration: InputDecoration(
-                          hintStyle: TextStyle(color: theme.primaryColorDark),
-                          hintText: sl?.getText('search'),
-                          focusColor: theme.primaryColorLight,
-                          border: InputBorder.none,
-                          filled: true,
-                          fillColor: theme.primaryColorLight,
-                          contentPadding: EdgeInsets.symmetric(
-                              horizontal: 16, vertical: 12),
-                          enabledBorder: OutlineInputBorder(
-                              borderSide: BorderSide(
-                                  color: Colors.transparent, width: 0),
-                              borderRadius: BorderRadius.zero),
-                          focusedBorder: OutlineInputBorder(
-                              borderSide: BorderSide(
-                                  color: theme.primaryColorDark, width: 2),
-                              borderRadius: BorderRadius.zero),
-                          suffixIcon: Icon(Icons.search,
-                              color: theme.primaryColorDark))),
-                ),
+                title: _buildSearchBar(sl, colorScheme, switcherProvider),
               ),
-              body: Container(
-                child: ReorderableListView(
-                  onReorder: _onReorder,
-                  children: _listTiles,
-                ),
-              ),
+              body: isEmpty
+                  ? _buildEmptyState(colorScheme, sl)
+                  : Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 12),
+                      child: ReorderableListView(
+                        onReorder: _onReorder,
+                        buildDefaultDragHandles: false,
+                        proxyDecorator: _proxyDecorator,
+                        children: _listTiles,
+                      ),
+                    ),
               floatingActionButtonLocation:
-                  FloatingActionButtonLocation.endDocked,
-              floatingActionButton: Container(
-                height: 50.0,
-                width: 50.0,
-                child: FloatingActionButton(
-                  backgroundColor: Theme.of(context).primaryColorLight,
-                  onPressed: _onBtnPress,
-                  child: Icon(Icons.add,
-                      color: Theme.of(context).primaryColorDark),
-                ),
+                  FloatingActionButtonLocation.endFloat,
+              floatingActionButton: FloatingActionButton.extended(
+                onPressed: _onBtnPress,
+                elevation: 4,
+                icon: const Icon(Icons.add),
+                label: Text(sl?.getText('addNote') ?? 'New Note'),
               ),
-              // This trailing comma makes auto-formatting nicer for build methods.
               bottomNavigationBar:
-                  _buildBottomAppBar(context, sl!, theme, switcherProvider));
+                  _buildBottomNavigationBar(context, sl!, colorScheme, switcherProvider));
         });
   }
 
-  BottomAppBar _buildBottomAppBar(BuildContext context, SimpleLocalizations sl,
-      ThemeData theme, SwitcherChangeNotifier switcherProvider) {
-    return BottomAppBar(
-        height: 60,
-        shape: CircularNotchedRectangle(),
-        color: Theme.of(context).primaryColorLight,
-        child: Row(children: <Widget>[
-          IconButton(
-            tooltip: sl.getText('contentChanged'),
-            color: Theme.of(context).primaryColorDark,
-            icon: Icon(Icons.save_sharp),
-            onPressed: () async {
-              if (_currentNote.id != null &&
-                  _ctrls.containsKey('${_currentNote.id}cblt')) {
-                await db.updateNoteItemContent(_currentNote.id!,
-                    _ctrls['${_currentNote.id}cblt']!.value.text);
-                _showMessageDialog(
-                    sl.getText('contentChanged')!,
-                    [
-                      '${_currentNote.title}',
-                      '',
-                      _ctrls['${_currentNote.id}cblt']!.value.text,
-                    ],
-                    sl.getText('noticed')!);
+  /// Material 3 搜索框
+  Widget _buildSearchBar(SimpleLocalizations? sl, ColorScheme colorScheme,
+      SwitcherChangeNotifier switcherProvider) {
+    return Container(
+      height: 40,
+      decoration: BoxDecoration(
+        color: colorScheme.surfaceContainerHighest,
+      ),
+      child: TextField(
+        onChanged: (v) async {
+          if (v.isNotEmpty) {
+            _items = await db.getNotes({
+              ' where ( title like ? ': '%$v%',
+              ' or content like ?) ': '%$v%',
+              switcherProvider.isHiddenDone()
+                  ? ' and isDone=? '
+                  : '': switcherProvider.isHiddenDone() ? 0 : null
+            });
+            setState(() {});
+          } else {
+            _updateUI(context);
+          }
+        },
+        decoration: InputDecoration(
+          hintText: sl?.getText('search'),
+          hintStyle: TextStyle(color: colorScheme.onSurfaceVariant),
+          prefixIcon: Icon(Icons.search, color: colorScheme.onSurfaceVariant),
+          suffixIcon: _items.isNotEmpty
+              ? IconButton(
+                  icon: Icon(Icons.clear, color: colorScheme.onSurfaceVariant),
+                  onPressed: () {
+                    _updateUI(context);
+                  },
+                )
+              : null,
+          border: InputBorder.none,
+          contentPadding: const EdgeInsets.symmetric(
+            horizontal: 16,
+            vertical: 10,
+          ),
+        ),
+      ),
+    );
+  }
+
+  /// 空状态页面
+  Widget _buildEmptyState(ColorScheme colorScheme, SimpleLocalizations? sl) {
+    return Center(
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Container(
+            width: 120,
+            height: 120,
+            decoration: BoxDecoration(
+              color: colorScheme.surfaceContainerHighest,
+              shape: BoxShape.circle,
+            ),
+            child: Icon(
+              Icons.note_alt_outlined,
+              size: 60,
+              color: colorScheme.onSurfaceVariant,
+            ),
+          ),
+          const SizedBox(height: 24),
+          Text(
+            sl?.getText('emptyNotes') ?? 'No notes yet',
+            style: TextStyle(
+              fontSize: 20,
+              fontWeight: FontWeight.w600,
+              color: colorScheme.onSurface,
+            ),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            sl?.getText('emptyNotesHint') ?? 'Tap + to create your first note',
+            style: TextStyle(
+              fontSize: 14,
+              color: colorScheme.onSurfaceVariant,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// 拖拽代理装饰器
+  Widget _proxyDecorator(Widget child, int index, Animation<double> animation) {
+    return AnimatedBuilder(
+      animation: animation,
+      builder: (context, child) {
+        final animValue = Curves.easeInOut.transform(animation.value);
+        return Transform.scale(
+          scale: 1.0 + (animValue * 0.05),
+          child: Opacity(
+            opacity: 0.9,
+            child: child,
+          ),
+        );
+      },
+      child: child,
+    );
+  }
+
+  /// Material 3 底部导航栏
+  Widget _buildBottomNavigationBar(BuildContext context, SimpleLocalizations sl,
+      ColorScheme colorScheme, SwitcherChangeNotifier switcherProvider) {
+    return Container(
+      decoration: BoxDecoration(
+        border: Border(
+          top: BorderSide(
+            color: colorScheme.outlineVariant,
+            width: 1,
+          ),
+        ),
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          // 隐藏已完成开关
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+            child: Row(
+              children: [
+                Text(
+                  sl.getText('hiddenDoneLabel') ?? 'Hide completed',
+                  style: TextStyle(
+                    color: colorScheme.onSurfaceVariant,
+                    fontSize: 14,
+                  ),
+                ),
+                const Spacer(),
+                Switch(
+                  value: switcherProvider.isHiddenDone(),
+                  onChanged: (bool value) {
+                    setState(() {
+                      switcherProvider.setHiddenDone(value);
+                      db.setConfig(Config.hiddenDone, value ? '1' : '0');
+                    });
+                  },
+                ),
+              ],
+            ),
+          ),
+          // 底部导航
+          BottomNavigationBar(
+            currentIndex: 0,
+            onTap: (index) {
+              switch (index) {
+                case 0: // Save
+                  _handleSave(sl);
+                  break;
+                case 1: // Delete
+                  _handleDelete(sl);
+                  break;
+                case 2: // Backup
+                  Navigator.of(context).pushReplacementNamed(Backup.routeName);
+                  break;
+                case 3: // Theme
+                  _showColorPickerDialog(context, sl, colorScheme);
+                  break;
+                case 4: // Game
+                  Navigator.of(context).pushReplacementNamed(NumberPuzzles.routeName);
+                  break;
               }
             },
+            items: [
+              BottomNavigationBarItem(
+                icon: const Icon(Icons.save_rounded),
+                label: sl.getText('contentChanged') ?? 'Save',
+              ),
+              BottomNavigationBarItem(
+                icon: const Icon(Icons.delete_rounded),
+                label: sl.getText('confirm2delete') ?? 'Delete',
+              ),
+              BottomNavigationBarItem(
+                icon: const Icon(Icons.backup_rounded),
+                label: sl.getText('export_import') ?? 'Backup',
+              ),
+              BottomNavigationBarItem(
+                icon: const Icon(Icons.palette_rounded),
+                label: sl.getText('colorPicker') ?? 'Theme',
+              ),
+              BottomNavigationBarItem(
+                icon: const Icon(Icons.gamepad_rounded),
+                label: sl.getText('numberpuzzles') ?? 'Game',
+              ),
+            ],
           ),
-          IconButton(
-              tooltip: sl.getText('confirm2delete'),
-              icon: const Icon(Icons.delete_sharp),
-              color: Theme.of(context).primaryColorDark,
-              onPressed: () {
-                if (this._currentNote.isDone) {
-                  showDialog<void>(
-                      context: context,
-                      builder: (context) {
-                        return AlertDialog(
-                            title: Text(sl.getText('confirm')!),
-                            content: SingleChildScrollView(
-                              child: ListBody(
-                                children: [
-                                  Text(sl.getText('confirm2delete')!),
-                                  Text('${_currentNote.title!}')
-                                ],
-                              ),
-                            ),
-                            actions: <Widget>[
-                              TextButton(
-                                  child: Text(sl.getText('confirmYes')!),
-                                  onPressed: () {
-                                    db.deleteNoteItem(this._currentNote);
-                                    Navigator.of(context).pop();
-                                    _updateUI(context);
-                                  })
-                            ]);
-                      });
-                }
-              }),
-          IconButton(
-              tooltip: sl.getText('export_import'),
-              icon: const Icon(Icons.settings_backup_restore_rounded),
-              color: Theme.of(context).primaryColorDark,
-              onPressed: () async =>
-                  Navigator.of(context).pushReplacementNamed(Backup.routeName)),
-          IconButton(
-              tooltip: sl.getText('colorPicker'),
-              icon: const Icon(Icons.color_lens_outlined),
-              color: Theme.of(context).primaryColorDark,
-              onPressed: () {
-                showDialog<void>(
-                    context: context,
-                    builder: (context) {
-                      final themeNotifier =
-                          Provider.of<ThemeChangeNotifier>(context);
-                      final currentPrimary =
-                          themeNotifier.getTheme()?.primaryColor ??
-                              theme.primaryColor;
+        ],
+      ),
+    );
+  }
 
-                      return AlertDialog(
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(18),
-                          ),
-                          titlePadding: const EdgeInsets.fromLTRB(20, 18, 20, 8),
-                          contentPadding:
-                              const EdgeInsets.fromLTRB(16, 4, 16, 12),
-                          title: Row(
-                            children: [
-                              Icon(Icons.palette_outlined,
-                                  color: theme.primaryColorDark),
-                              const SizedBox(width: 8),
-                              Text(sl.getText('colorPicker')!),
-                            ],
-                          ),
-                          titleTextStyle: TextStyle(
-                              fontSize: 22.0,
-                              fontWeight: FontWeight.w700,
-                              color: theme.primaryColorDark),
-                          content: ConstrainedBox(
-                            constraints: const BoxConstraints(maxWidth: 420),
-                            child: SingleChildScrollView(
-                              child: Wrap(
-                                spacing: 8,
-                                runSpacing: 8,
-                                children:
-                                    _buildColorList(themeNotifier, currentPrimary),
+  /// 处理保存操作
+  Future<void> _handleSave(SimpleLocalizations sl) async {
+    if (_currentNote.id != null &&
+        _ctrls.containsKey('${_currentNote.id}cblt')) {
+      await db.updateNoteItemContent(
+          _currentNote.id!, _ctrls['${_currentNote.id}cblt']!.value.text);
+      _showMessageDialog(
+          sl.getText('contentChanged')!,
+          [
+            '${_currentNote.title}',
+            '',
+            _ctrls['${_currentNote.id}cblt']!.value.text,
+          ],
+          sl.getText('noticed')!);
+    }
+  }
+
+  /// 处理删除操作
+  Future<void> _handleDelete(SimpleLocalizations sl) async {
+    if (_currentNote.isDone) {
+      showDialog<void>(
+          context: context,
+          builder: (context) {
+            return AlertDialog(
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(20),
+                ),
+                title: Text(sl.getText('confirm')!),
+                content: SingleChildScrollView(
+                  child: ListBody(
+                    children: [
+                      Text(sl.getText('confirm2delete')!),
+                      Text('${_currentNote.title!}')
+                    ],
+                  ),
+                ),
+                actions: <Widget>[
+                  TextButton(
+                      child: Text(sl.getText('confirmYes')!),
+                      onPressed: () {
+                        db.deleteNoteItem(this._currentNote);
+                        Navigator.of(context).pop();
+                        _updateUI(context);
+                      })
+                ]);
+          });
+    }
+  }
+
+  /// 显示颜色选择器对话框
+  void _showColorPickerDialog(BuildContext context, SimpleLocalizations sl,
+      ColorScheme colorScheme) {
+    showDialog<void>(
+        context: context,
+        builder: (dialogContext) {
+          return StatefulBuilder(
+            builder: (context, setDialogState) {
+              return AlertDialog(
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(24),
+                  ),
+                  titlePadding: const EdgeInsets.fromLTRB(24, 24, 24, 8),
+                  contentPadding: const EdgeInsets.fromLTRB(24, 8, 24, 24),
+                  title: Row(
+                    children: [
+                      Icon(Icons.palette_rounded, color: colorScheme.primary),
+                      const SizedBox(width: 12),
+                      Text(
+                        sl.getText('colorPicker')!,
+                        style: TextStyle(
+                          fontSize: 22,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ],
+                  ),
+                  content: SizedBox(
+                    width: 350,
+                    child: Wrap(
+                      spacing: 12,
+                      runSpacing: 12,
+                      alignment: WrapAlignment.center,
+                      children: List.generate(Colors.primaries.length, (index) {
+                        final color = Colors.primaries[index];
+                        final isSelected = index == _currentColorIndex;
+                        return InkWell(
+                          onTap: () {
+                            final themeNotifier = Provider.of<ThemeChangeNotifier>(dialogContext, listen: false);
+                            themeNotifier.setTheme(AppTheme.getLightTheme(color));
+                            db.setConfig(Config.primarySwatch, index.toString());
+                            setDialogState(() {
+                              _currentColorIndex = index;
+                            });
+                            setState(() {});
+                          },
+                          borderRadius: BorderRadius.circular(16),
+                          child: AnimatedContainer(
+                            width: 48,
+                            height: 48,
+                            duration: const Duration(milliseconds: 200),
+                            decoration: BoxDecoration(
+                              color: color,
+                              shape: BoxShape.circle,
+                              border: Border.all(
+                                color: isSelected
+                                    ? colorScheme.onSurface
+                                    : Colors.transparent,
+                                width: 3,
                               ),
+                              boxShadow: isSelected
+                                  ? [
+                                      BoxShadow(
+                                        color: color.withValues(alpha: 0.5),
+                                        blurRadius: 12,
+                                        spreadRadius: 2,
+                                      )
+                                    ]
+                                  : null,
                             ),
+                            child: isSelected
+                                ? Icon(Icons.check_rounded,
+                                    color: Colors.white, size: 24)
+                                : null,
                           ),
-                          actions: <Widget>[
-                            TextButton(
-                                child: Text(
-                                  sl.getText('colorPickerClose')!,
-                                  style: const TextStyle(
-                                    fontWeight: FontWeight.w700,
-                                    fontSize: 17.0,
-                                  ),
-                                ),
-                                onPressed: () {
-                                  Navigator.of(context).pop();
-                                })
-                          ]);
-                    });
-              }),
-          IconButton(
-              tooltip: sl.getText('numberpuzzles'),
-              icon: const Icon(Icons.gamepad_outlined),
-              color: Theme.of(context).primaryColorDark,
-              onPressed: () {
-                Navigator.of(context)
-                    .pushReplacementNamed(NumberPuzzles.routeName);
-              }),
-          Spacer(),
-          Padding(
-            padding: EdgeInsets.only(right: 56),
-            child: Center(
-              child: Switch(
-                  value: switcherProvider.isHiddenDone(),
-                  activeThumbColor: Theme.of(context).primaryColorDark,
-                  activeTrackColor: Theme.of(context).primaryColorLight,
-                  onChanged: (bool value) => setState(() {
-                        switcherProvider.setHiddenDone(value);
-                        db.setConfig(Config.hiddenDone, value ? '1' : '0');
-                      })),
-            ),
-          )
-        ]));
+                        );
+                      }),
+                    ),
+                  ),
+                  actions: <Widget>[
+                    TextButton(
+                        child: Text(
+                          sl.getText('colorPickerClose')!,
+                          style: const TextStyle(
+                            fontWeight: FontWeight.w600,
+                            fontSize: 16,
+                          ),
+                        ),
+                        onPressed: () {
+                          Navigator.of(dialogContext).pop();
+                        })
+                  ]);
+            },
+          );
+        });
   }
 
   List<Widget> _buildItemList(ThemeData theme) {
+    final colorScheme = theme.colorScheme;
+
     List<Widget> _listTiles = _items.asMap().entries.map((entry) {
       Note item = entry.value;
 
@@ -355,173 +525,135 @@ class _NoteLandingState extends State<NoteLanding> {
 
       return Padding(
         key: Key('${item.id}'),
-        padding: EdgeInsets.symmetric(horizontal: 4, vertical: 1),
+        padding: const EdgeInsets.symmetric(vertical: 6),
         child: Card(
-          elevation: 2,
+          elevation: 0,
+          color: item.isDone
+              ? colorScheme.surfaceContainerLowest
+              : colorScheme.surfaceContainerLow,
           shape:
-              RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-          child: CheckboxListTile(
-              activeColor: theme.primaryColorLight,
-              checkColor: theme.primaryColorDark,
-              key: Key('${item.id}'),
-              value: item.isDone,
-              title: Row(children: [
+              RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+          child: Padding(
+            padding: const EdgeInsets.all(12),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                // 复选框
+                Padding(
+                  padding: const EdgeInsets.only(top: 4),
+                  child: Checkbox(
+                    value: item.isDone,
+                    onChanged: (bool? newValue) {
+                      _currentNote = item;
+                      setState(() => item.isDone = newValue ?? false);
+                      db.toggleNoteItem(item);
+                    },
+                  ),
+                ),
+                const SizedBox(width: 8),
+                // 内容区域
                 Expanded(
-                  child: Text(
-                    '${item.title}',
-                    style: TextStyle(
-                        color: item.isDone
-                            ? theme.primaryColorLight
-                            : theme.primaryColorDark,
-                        fontSize: 20.0,
-                        fontWeight: FontWeight.w700),
-                  ),
-                ),
-                SizedBox(width: 6),
-                Text(
-                  '${item.targetDate.toString().substring(0, 10)}',
-                  style: TextStyle(
-                      color: item.isDone
-                          ? theme.primaryColorLight
-                          : theme.primaryColorDark,
-                      fontSize: 13.0,
-                      fontWeight: FontWeight.w500),
-                )
-              ]),
-              subtitle: Padding(
-                padding: const EdgeInsets.only(top: 4),
-                child: TextField(
-                  key: Key('${item.id}tf'),
-                  controller: _ctrls['${item.id}cblt'],
-                  keyboardType: TextInputType.multiline,
-                  maxLines: null,
-                  enabled: !item.isDone,
-                  style: TextStyle(
-                    color: item.isDone
-                        ? theme.primaryColorLight
-                        : theme.primaryColorDark,
-                    fontSize: 16,
-                    height: 1.25,
-                  ),
-                  decoration: InputDecoration(
-                    border: InputBorder.none,
-                    contentPadding: EdgeInsets.fromLTRB(8, 8, 8, 8),
-                    enabledBorder: OutlineInputBorder(
-                        borderSide: BorderSide(
-                          color: theme.primaryColorLight,
-                          width: 1,
-                        ),
-                        borderRadius: BorderRadius.circular(8)),
-                    disabledBorder: OutlineInputBorder(
-                        borderSide: BorderSide(
-                          color: theme.primaryColorLight,
-                          width: 1,
-                        ),
-                        borderRadius: BorderRadius.circular(8)),
-                    fillColor: item.isDone
-                        ? theme.primaryColorLight.withValues(alpha: 0.1)
-                        : theme.secondaryHeaderColor,
-                    filled: true,
-                    focusColor: theme.primaryColorLight,
-                    focusedBorder: OutlineInputBorder(
-                      borderSide: BorderSide(
-                        color: theme.primaryColorDark,
-                        width: 2,
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      // 标题和日期行
+                      Row(
+                        children: [
+                          Expanded(
+                            child: Text(
+                              '${item.title}',
+                              style: TextStyle(
+                                color: item.isDone
+                                    ? colorScheme.onSurfaceVariant
+                                    : colorScheme.onSurface,
+                                fontSize: 18,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 10,
+                              vertical: 4,
+                            ),
+                            decoration: BoxDecoration(
+                              color: colorScheme.primaryContainer,
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                            child: Text(
+                              '${item.targetDate.toString().substring(0, 10)}',
+                              style: TextStyle(
+                                color: colorScheme.onPrimaryContainer,
+                                fontSize: 12,
+                                fontWeight: FontWeight.w500,
+                              ),
+                            ),
+                          ),
+                          // 拖拽手柄
+                          Padding(
+                            padding: const EdgeInsets.only(left: 8, top: 4),
+                            child: ReorderableDragStartListener(
+                              index: entry.key,
+                              child: Icon(
+                                Icons.drag_handle_rounded,
+                                color: colorScheme.onSurfaceVariant,
+                                size: 20,
+                              ),
+                            ),
+                          ),
+                        ],
                       ),
-                      borderRadius: BorderRadius.circular(8),
-                    ),
+                      const SizedBox(height: 10),
+                      // 内容输入框
+                      TextField(
+                        key: Key('${item.id}tf'),
+                        controller: _ctrls['${item.id}cblt'],
+                        keyboardType: TextInputType.multiline,
+                        maxLines: null,
+                        enabled: !item.isDone,
+                        style: TextStyle(
+                          color: item.isDone
+                              ? colorScheme.onSurfaceVariant
+                              : colorScheme.onSurface,
+                          fontSize: 15,
+                          height: 1.4,
+                        ),
+                        decoration: InputDecoration(
+                          border: InputBorder.none,
+                          contentPadding: const EdgeInsets.all(12),
+                          filled: true,
+                          fillColor: item.isDone
+                              ? colorScheme.surfaceContainerHighest
+                              : colorScheme.surface,
+                          enabledBorder: OutlineInputBorder(
+                            borderSide: BorderSide.none,
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                          disabledBorder: OutlineInputBorder(
+                            borderSide: BorderSide.none,
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                          focusedBorder: OutlineInputBorder(
+                            borderSide: BorderSide(
+                              color: colorScheme.primary,
+                              width: 2,
+                            ),
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                        ),
+                        onTap: () => _currentNote = item,
+                        textCapitalization: TextCapitalization.sentences,
+                      ),
+                    ],
                   ),
-                  onTap: () => this._currentNote = item,
-                  textCapitalization: TextCapitalization.sentences,
                 ),
-              ),
-              onChanged: (bool? newValue) {
-                this._currentNote = item;
-                setState(() => item.isDone = newValue ?? false);
-                db.toggleNoteItem(item);
-              }),
+              ],
+            ),
+          ),
         ),
       );
     }).toList();
     return _listTiles;
-  }
-
-  List<Widget> _buildColorList(
-      ThemeChangeNotifier themeNotifier, Color currentPrimary) {
-    final primarySwatchNames = [
-      'red',
-      'pink',
-      'purple',
-      'deepPurple',
-      'indigo',
-      'blue',
-      'lightBlue',
-      'cyan',
-      'teal',
-      'green',
-      'lightGreen',
-      'lime',
-      'yellow',
-      'amber',
-      'orange',
-      'deepOrange',
-      'brown',
-      'blueGrey',
-    ];
-
-    return Colors.primaries.map((c) {
-      final idx = Colors.primaries.indexOf(c);
-      final selected = c.toARGB32() == currentPrimary.toARGB32();
-
-      return InkWell(
-        key: Key('${c.toString()}'),
-        borderRadius: BorderRadius.circular(12),
-        onTap: () {
-          themeNotifier.setTheme(ThemeData(
-            primarySwatch: c,
-            visualDensity: VisualDensity.adaptivePlatformDensity,
-          ));
-          db.setConfig(Config.primarySwatch, idx.toString());
-        },
-        child: AnimatedContainer(
-          duration: const Duration(milliseconds: 180),
-          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-          decoration: BoxDecoration(
-            color: selected ? c.shade50 : Colors.transparent,
-            borderRadius: BorderRadius.circular(12),
-            border: Border.all(
-              color: selected ? c.shade700 : c.shade200,
-              width: selected ? 2 : 1,
-            ),
-          ),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Container(
-                width: 18,
-                height: 18,
-                decoration: BoxDecoration(
-                  color: c,
-                  shape: BoxShape.circle,
-                ),
-              ),
-              const SizedBox(width: 8),
-              Text(
-                primarySwatchNames[idx],
-                style: TextStyle(
-                  fontSize: 13,
-                  fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
-                  color: selected ? c.shade900 : c.shade700,
-                ),
-              ),
-              if (selected) ...[
-                const SizedBox(width: 6),
-                Icon(Icons.check_circle, size: 16, color: c.shade700),
-              ]
-            ],
-          ),
-        ),
-      );
-    }).toList();
   }
 }

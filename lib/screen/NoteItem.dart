@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/scheduler.dart';
 
 import '../i18n/SimpleLocalizations.dart';
 import '../model/Note.dart';
@@ -13,22 +14,55 @@ class NoteItem extends StatefulWidget {
   _NoteItemState createState() => _NoteItemState();
 }
 
-class _NoteItemState extends State<NoteItem> {
-  static DateTime _datetime = DateTime.now().add(Duration(days: 1));
-  var _titleCtl = TextEditingController();
-  var _contentCtl = TextEditingController();
+class _NoteItemState extends State<NoteItem>
+    with SingleTickerProviderStateMixin {
+  static DateTime _datetime = DateTime.now().add(const Duration(days: 1));
+  late final TextEditingController _titleCtl;
+  late final TextEditingController _contentCtl;
+  late final AnimationController _animationController;
+  late final Animation<double> _fadeAnimation;
+  late final Animation<Offset> _slideAnimation;
+
+  @override
+  void initState() {
+    super.initState();
+    _titleCtl = TextEditingController();
+    _contentCtl = TextEditingController();
+
+    // 页面进入动画
+    _animationController = AnimationController(
+      duration: const Duration(milliseconds: 400),
+      vsync: this,
+    );
+
+    _fadeAnimation = Tween<double>(begin: 0.0, end: 1.0).animate(
+      CurvedAnimation(parent: _animationController, curve: Curves.easeOut),
+    );
+
+    _slideAnimation = Tween<Offset>(
+      begin: const Offset(0, 0.1),
+      end: Offset.zero,
+    ).animate(
+      CurvedAnimation(parent: _animationController, curve: Curves.easeOut),
+    );
+
+    SchedulerBinding.instance.addPostFrameCallback((_) {
+      _animationController.forward();
+    });
+  }
 
   @override
   void dispose() {
     _contentCtl.dispose();
     _titleCtl.dispose();
+    _animationController.dispose();
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
-    Color _primaryColor = Theme.of(context).primaryColorDark;
-    SimpleLocalizations sl = SimpleLocalizations.of(context)!;
+    final colorScheme = Theme.of(context).colorScheme;
+    final sl = SimpleLocalizations.of(context)!;
 
     return PopScope(
       canPop: false,
@@ -37,103 +71,101 @@ class _NoteItemState extends State<NoteItem> {
         NoteLanding.routeName,
       ),
       child: Scaffold(
-        appBar: AppBar(
-          leading: IconButton(
-            icon: const Icon(Icons.arrow_back_ios_rounded),
-            onPressed: () => NavigationHelper.replaceTo(
-              context,
-              NoteLanding.routeName,
+        backgroundColor: colorScheme.surface,
+        appBar: _buildAppBar(context, sl, colorScheme),
+        body: FadeTransition(
+          opacity: _fadeAnimation,
+          child: SlideTransition(
+            position: _slideAnimation,
+            child: SingleChildScrollView(
+              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  _buildSectionTitle(sl, 'targetDate', 'Target Date'),
+                  const SizedBox(height: 12),
+                  _buildDatepickerCard(colorScheme, sl),
+                  const SizedBox(height: 28),
+                  _buildSectionTitle(sl, 'titleLabel', 'Title'),
+                  const SizedBox(height: 12),
+                  _buildNoteTitleTextField(colorScheme, sl),
+                  const SizedBox(height: 24),
+                  _buildSectionTitle(sl, 'contentLabel', 'Content'),
+                  const SizedBox(height: 12),
+                  _buildNoteDetailTextField(colorScheme, sl),
+                  const SizedBox(height: 40),
+                  _buildSaveButton(colorScheme, sl),
+                  const SizedBox(height: 16),
+                ],
+              ),
             ),
           ),
-          elevation: 2.0,
-          title: Text(sl.getText('addNote') ?? 'Add Note'),
         ),
-        body: Padding(
-            padding: const EdgeInsets.all(24.0),
-            child: ListView(children: <Widget>[
-              _buildDatepickerCard(context, sl, _primaryColor),
-              const SizedBox(height: 24),
-              _buildNoteTitleTextField(context, sl),
-              const SizedBox(height: 20),
-              _buildNoteDetailTextField(sl),
-              const SizedBox(height: 32),
-              _buildSaveButton(_primaryColor, context, sl),
-            ])),
       ),
     );
   }
 
-  TextField _buildNoteTitleTextField(
-      BuildContext context, SimpleLocalizations sl) {
-    return TextField(
-      keyboardType: TextInputType.text,
-      style: Theme.of(context).textTheme.bodyLarge?.copyWith(fontSize: 18),
-      decoration: InputDecoration(
-        labelText: sl.getText('titleLabel'),
-        border: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(12),
+  /// Material 3 AppBar
+  PreferredSizeWidget _buildAppBar(
+      BuildContext context, SimpleLocalizations sl, ColorScheme colorScheme) {
+    return AppBar(
+      leading: IconButton(
+        icon: const Icon(Icons.arrow_back_rounded),
+        onPressed: () => NavigationHelper.replaceTo(
+          context,
+          NoteLanding.routeName,
         ),
-        filled: true,
-        fillColor: Colors.grey[50],
-        contentPadding:
-            const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
       ),
-      controller: _titleCtl,
+      elevation: 0,
+      scrolledUnderElevation: 1,
+      title: Text(
+        sl.getText('addNote') ?? 'New Note',
+        style: TextStyle(
+          fontWeight: FontWeight.w600,
+        ),
+      ),
     );
   }
 
-  TextField _buildNoteDetailTextField(SimpleLocalizations sl) {
-    return TextField(
-      keyboardType: TextInputType.multiline,
-      maxLines: 8,
-      minLines: 5,
-      textCapitalization: TextCapitalization.sentences,
-      decoration: InputDecoration(
-        labelText: sl.getText('contentLabel'),
-        alignLabelWithHint: true,
-        border: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(12),
-        ),
-        filled: true,
-        fillColor: Colors.grey[50],
-        contentPadding:
-            const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
+  /// 区块标题
+  Widget _buildSectionTitle(SimpleLocalizations sl, String key, String fallback) {
+    final colorScheme = Theme.of(context).colorScheme;
+    return Text(
+      sl.getText(key) ?? fallback,
+      style: TextStyle(
+        fontSize: 14,
+        fontWeight: FontWeight.w600,
+        color: colorScheme.primary,
+        letterSpacing: 0.5,
       ),
-      controller: _contentCtl,
     );
   }
 
-  Widget _buildDatepickerCard(
-      BuildContext context, SimpleLocalizations sl, Color _primaryColor) {
-    return Card(
-      elevation: 2,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(12),
-      ),
+  /// Material 3 日期选择器卡片
+  Widget _buildDatepickerCard(ColorScheme colorScheme, SimpleLocalizations sl) {
+    return Material(
+      color: colorScheme.surfaceContainerLow,
+      borderRadius: BorderRadius.circular(16),
       child: InkWell(
-        borderRadius: BorderRadius.circular(12),
-        onTap: () {
-          showDatePicker(
-            context: context,
-            initialDate: _datetime,
-            firstDate: DateTime.parse("2020-01-01"),
-            lastDate: DateTime.parse("2030-12-31"),
-            cancelText: sl.getText('cancelLabel'),
-            confirmText: sl.getText('confirmLabel'),
-          ).then((value) {
-            if (value != null) {
-              setState(() {
-                _datetime = value;
-              });
-            }
-          });
-        },
-        child: Padding(
-          padding: const EdgeInsets.all(16.0),
+        borderRadius: BorderRadius.circular(16),
+        onTap: () => _showDatePicker(sl, colorScheme),
+        child: Container(
+          padding: const EdgeInsets.all(20),
           child: Row(
             children: [
-              Icon(Icons.calendar_today_rounded,
-                  color: _primaryColor, size: 28),
+              Container(
+                width: 48,
+                height: 48,
+                decoration: BoxDecoration(
+                  color: colorScheme.primaryContainer,
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Icon(
+                  Icons.calendar_month_rounded,
+                  color: colorScheme.onPrimaryContainer,
+                  size: 24,
+                ),
+              ),
               const SizedBox(width: 16),
               Expanded(
                 child: Column(
@@ -142,25 +174,28 @@ class _NoteItemState extends State<NoteItem> {
                     Text(
                       sl.getText('targetDate') ?? 'Target Date',
                       style: TextStyle(
-                        fontSize: 14,
-                        color: Colors.grey[600],
-                        fontWeight: FontWeight.w400,
+                        fontSize: 13,
+                        color: colorScheme.onSurfaceVariant,
+                        fontWeight: FontWeight.w500,
                       ),
                     ),
-                    const SizedBox(height: 4),
+                    const SizedBox(height: 6),
                     Text(
-                      '${_datetime.toString().substring(0, 10)}',
+                      _formatDate(_datetime),
                       style: TextStyle(
-                        fontSize: 20,
+                        fontSize: 18,
                         fontWeight: FontWeight.w600,
-                        color: _primaryColor,
+                        color: colorScheme.onSurface,
                       ),
                     ),
                   ],
                 ),
               ),
-              Icon(Icons.arrow_forward_ios_rounded,
-                  color: Colors.grey[400], size: 18),
+              Icon(
+                Icons.chevron_right_rounded,
+                color: colorScheme.onSurfaceVariant,
+                size: 24,
+              ),
             ],
           ),
         ),
@@ -168,54 +203,244 @@ class _NoteItemState extends State<NoteItem> {
     );
   }
 
-  Widget _buildSaveButton(
-      Color _primaryColor, BuildContext context, SimpleLocalizations sl) {
+  /// 显示日期选择器
+  void _showDatePicker(SimpleLocalizations sl, ColorScheme colorScheme) {
+    showDatePicker(
+      context: context,
+      initialDate: _datetime,
+      firstDate: DateTime.parse("2020-01-01"),
+      lastDate: DateTime.parse("2030-12-31"),
+      cancelText: sl.getText('cancelLabel'),
+      confirmText: sl.getText('confirmLabel'),
+      helpText: sl.getText('targetDate') ?? 'Select Date',
+      builder: (context, child) {
+        return Theme(
+          data: Theme.of(context).copyWith(
+            colorScheme: colorScheme,
+            textButtonTheme: TextButtonThemeData(
+              style: TextButton.styleFrom(
+                foregroundColor: colorScheme.primary,
+              ),
+            ),
+          ),
+          child: child!,
+        );
+      },
+    ).then((value) {
+      if (value != null) {
+        setState(() {
+          _datetime = value;
+        });
+      }
+    });
+  }
+
+  /// 格式化日期显示
+  String _formatDate(DateTime date) {
+    final months = [
+      'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
+      'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'
+    ];
+    return '${months[date.month - 1]} ${date.day}, ${date.year}';
+  }
+
+  /// Material 3 标题输入框
+  Widget _buildNoteTitleTextField(ColorScheme colorScheme, SimpleLocalizations sl) {
+    return TextField(
+      controller: _titleCtl,
+      keyboardType: TextInputType.text,
+      textCapitalization: TextCapitalization.sentences,
+      style: TextStyle(
+        fontSize: 18,
+        fontWeight: FontWeight.w500,
+        color: colorScheme.onSurface,
+      ),
+      decoration: InputDecoration(
+        hintText: sl.getText('titleLabel') ?? 'Title',
+        hintStyle: TextStyle(
+          color: colorScheme.onSurfaceVariant,
+          fontWeight: FontWeight.w400,
+        ),
+        filled: true,
+        fillColor: colorScheme.surfaceContainerHighest,
+        border: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(16),
+          borderSide: BorderSide.none,
+        ),
+        enabledBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(16),
+          borderSide: BorderSide.none,
+        ),
+        focusedBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(16),
+          borderSide: BorderSide(
+            color: colorScheme.primary,
+            width: 2,
+          ),
+        ),
+        errorBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(16),
+          borderSide: BorderSide(
+            color: colorScheme.error,
+            width: 2,
+          ),
+        ),
+        contentPadding: const EdgeInsets.symmetric(
+          horizontal: 20,
+          vertical: 18,
+        ),
+      ),
+    );
+  }
+
+  /// Material 3 内容输入框
+  Widget _buildNoteDetailTextField(ColorScheme colorScheme, SimpleLocalizations sl) {
+    return TextField(
+      controller: _contentCtl,
+      keyboardType: TextInputType.multiline,
+      maxLines: null,
+      minLines: 8,
+      textCapitalization: TextCapitalization.sentences,
+      style: TextStyle(
+        fontSize: 16,
+        height: 1.5,
+        color: colorScheme.onSurface,
+      ),
+      decoration: InputDecoration(
+        hintText: sl.getText('contentLabel') ?? 'Content',
+        hintStyle: TextStyle(
+          color: colorScheme.onSurfaceVariant,
+        ),
+        alignLabelWithHint: true,
+        filled: true,
+        fillColor: colorScheme.surfaceContainerHighest,
+        border: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(16),
+          borderSide: BorderSide.none,
+        ),
+        enabledBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(16),
+          borderSide: BorderSide.none,
+        ),
+        focusedBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(16),
+          borderSide: BorderSide(
+            color: colorScheme.primary,
+            width: 2,
+          ),
+        ),
+        contentPadding: const EdgeInsets.symmetric(
+          horizontal: 20,
+          vertical: 16,
+        ),
+      ),
+    );
+  }
+
+  /// Material 3 保存按钮
+  Widget _buildSaveButton(ColorScheme colorScheme, SimpleLocalizations sl) {
     return SizedBox(
       width: double.infinity,
       height: 56,
-      child: ElevatedButton.icon(
+      child: FilledButton.icon(
         icon: const Icon(Icons.save_rounded, size: 24),
         label: Text(
           sl.getText('saveLabel') ?? 'Save',
-          style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w600),
+          style: const TextStyle(
+            fontSize: 16,
+            fontWeight: FontWeight.w600,
+            letterSpacing: 0.5,
+          ),
         ),
-        style: ElevatedButton.styleFrom(
-          backgroundColor: _primaryColor,
-          foregroundColor: Colors.white,
+        style: FilledButton.styleFrom(
+          backgroundColor: colorScheme.primary,
+          foregroundColor: colorScheme.onPrimary,
+          elevation: 0,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(16),
+          ),
+        ),
+        onPressed: () => _handleSave(sl, colorScheme),
+      ),
+    );
+  }
+
+  /// 处理保存操作
+  void _handleSave(SimpleLocalizations sl, ColorScheme colorScheme) async {
+    if (_titleCtl.value.text.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Row(
+            children: [
+              Icon(Icons.error_outline_rounded, color: colorScheme.onPrimaryContainer),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Text(
+                  sl.getText('titleRequired') ?? 'Title is required',
+                  style: TextStyle(color: colorScheme.onPrimaryContainer),
+                ),
+              ),
+            ],
+          ),
+          duration: const Duration(seconds: 2),
+          behavior: SnackBarBehavior.floating,
+          backgroundColor: colorScheme.primaryContainer,
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(12),
           ),
-          elevation: 2,
+          margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
         ),
-        onPressed: () async {
-          if (_titleCtl.value.text.isEmpty) {
-            ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(
-                content:
-                    Text(sl.getText('titleRequired') ?? 'Title is required'),
-                duration: const Duration(seconds: 2),
-                behavior: SnackBarBehavior.floating,
+      );
+      return;
+    }
+
+    // 添加保存反馈动画
+    final messenger = ScaffoldMessenger.of(context);
+    messenger.showSnackBar(
+      SnackBar(
+        content: Row(
+          children: [
+            SizedBox(
+              width: 20,
+              height: 20,
+              child: CircularProgressIndicator(
+                strokeWidth: 2,
+                valueColor: AlwaysStoppedAnimation<Color>(colorScheme.onPrimaryContainer),
               ),
-            );
-            return;
-          }
-
-          int total = await db.getNoteCount();
-
-          db.addNote(Note(
-              title: _titleCtl.value.text,
-              content: _contentCtl.value.text,
-              sequence: total * -NoteAccessSqlite.sequenceStep,
-              isDone: false,
-              targetDate: _datetime));
-
-          NavigationHelper.replaceTo(context, NoteLanding.routeName);
-
-          setState(() {
-            _datetime = DateTime.now();
-          });
-        },
+            ),
+            const SizedBox(width: 12),
+            Text(
+              'Saving...',
+              style: TextStyle(color: colorScheme.onPrimaryContainer),
+            ),
+          ],
+        ),
+        duration: const Duration(milliseconds: 800),
+        behavior: SnackBarBehavior.floating,
+        backgroundColor: colorScheme.primaryContainer,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(12),
+        ),
+        margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
       ),
     );
+
+    // 保存笔记
+    int total = await db.getNoteCount();
+    await db.addNote(Note(
+      title: _titleCtl.value.text,
+      content: _contentCtl.value.text,
+      sequence: total * -NoteAccessSqlite.sequenceStep,
+      isDone: false,
+      targetDate: _datetime,
+    ));
+
+    // 延迟一下让用户看到保存成功反馈
+    await Future.delayed(const Duration(milliseconds: 300));
+    NavigationHelper.replaceTo(context, NoteLanding.routeName);
+
+    setState(() {
+      _datetime = DateTime.now().add(const Duration(days: 1));
+    });
   }
 }

@@ -14,6 +14,221 @@ import 'screen/NoteLanding.dart';
 import 'screen/Login.dart';
 import 'screen/Backup.dart';
 
+/// Material 3 主题配置
+class AppTheme {
+  static ThemeData getLightTheme(Color primaryColor) {
+    final colorScheme = ColorScheme.fromSeed(
+      seedColor: primaryColor,
+      brightness: Brightness.light,
+    );
+
+    return ThemeData(
+      useMaterial3: true,
+      colorScheme: colorScheme,
+      appBarTheme: AppBarTheme(
+        centerTitle: false,
+        elevation: 0,
+        scrolledUnderElevation: 1,
+        backgroundColor: colorScheme.surface,
+        foregroundColor: colorScheme.onSurface,
+        titleTextStyle: TextStyle(
+          color: colorScheme.onSurface,
+          fontSize: 22,
+          fontWeight: FontWeight.w600,
+        ),
+      ),
+      cardTheme: CardThemeData(
+        elevation: 1,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(16),
+        ),
+        color: colorScheme.surfaceContainerHighest.withValues(alpha: 0.3),
+      ),
+      floatingActionButtonTheme: FloatingActionButtonThemeData(
+        elevation: 4,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(16),
+        ),
+      ),
+      bottomNavigationBarTheme: BottomNavigationBarThemeData(
+        elevation: 0,
+        backgroundColor: colorScheme.surface,
+        selectedItemColor: colorScheme.primary,
+        unselectedItemColor: colorScheme.onSurfaceVariant,
+        selectedLabelStyle: const TextStyle(
+          fontSize: 12,
+          fontWeight: FontWeight.w600,
+        ),
+        unselectedLabelStyle: const TextStyle(
+          fontSize: 12,
+          fontWeight: FontWeight.w500,
+        ),
+        type: BottomNavigationBarType.fixed,
+      ),
+      inputDecorationTheme: InputDecorationTheme(
+        filled: true,
+        contentPadding: const EdgeInsets.symmetric(
+          horizontal: 16,
+          vertical: 14,
+        ),
+        border: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(12),
+          borderSide: BorderSide.none,
+        ),
+        enabledBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(12),
+          borderSide: BorderSide.none,
+        ),
+        focusedBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(12),
+          borderSide: BorderSide(
+            color: colorScheme.primary,
+            width: 2,
+          ),
+        ),
+      ),
+      checkboxTheme: CheckboxThemeData(
+        fillColor: WidgetStateProperty.resolveWith((states) {
+          if (states.contains(WidgetState.selected)) {
+            return colorScheme.primary;
+          }
+          return Colors.transparent;
+        }),
+        checkColor: WidgetStateProperty.all(colorScheme.onPrimary),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(4),
+        ),
+      ),
+      switchTheme: SwitchThemeData(
+        thumbColor: WidgetStateProperty.resolveWith((states) {
+          if (states.contains(WidgetState.selected)) {
+            return colorScheme.primary;
+          }
+          return colorScheme.outline;
+        }),
+        trackColor: WidgetStateProperty.resolveWith((states) {
+          if (states.contains(WidgetState.selected)) {
+            return colorScheme.primary.withValues(alpha: 0.5);
+          }
+          return colorScheme.surfaceContainerHighest;
+        }),
+      ),
+      snackBarTheme: SnackBarThemeData(
+        behavior: SnackBarBehavior.floating,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(12),
+        ),
+      ),
+    );
+  }
+
+  static ThemeData getDarkTheme(Color primaryColor) {
+    final colorScheme = ColorScheme.fromSeed(
+      seedColor: primaryColor,
+      brightness: Brightness.dark,
+    );
+
+    return ThemeData(
+      useMaterial3: true,
+      colorScheme: colorScheme,
+      appBarTheme: AppBarTheme(
+        centerTitle: false,
+        elevation: 0,
+        scrolledUnderElevation: 1,
+        backgroundColor: colorScheme.surface,
+        foregroundColor: colorScheme.onSurface,
+        titleTextStyle: TextStyle(
+          color: colorScheme.onSurface,
+          fontSize: 22,
+          fontWeight: FontWeight.w600,
+        ),
+      ),
+      cardTheme: CardThemeData(
+        elevation: 1,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(16),
+        ),
+        color: colorScheme.surfaceContainerHighest.withValues(alpha: 0.3),
+      ),
+      floatingActionButtonTheme: FloatingActionButtonThemeData(
+        elevation: 4,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(16),
+        ),
+      ),
+      bottomNavigationBarTheme: BottomNavigationBarThemeData(
+        elevation: 0,
+        backgroundColor: colorScheme.surface,
+        selectedItemColor: colorScheme.primary,
+        unselectedItemColor: colorScheme.onSurfaceVariant,
+        selectedLabelStyle: const TextStyle(
+          fontSize: 12,
+          fontWeight: FontWeight.w600,
+        ),
+        unselectedLabelStyle: const TextStyle(
+          fontSize: 12,
+          fontWeight: FontWeight.w500,
+        ),
+        type: BottomNavigationBarType.fixed,
+      ),
+      inputDecorationTheme: InputDecorationTheme(
+        filled: true,
+        contentPadding: const EdgeInsets.symmetric(
+          horizontal: 16,
+          vertical: 14,
+        ),
+        border: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(12),
+          borderSide: BorderSide.none,
+        ),
+        enabledBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(12),
+          borderSide: BorderSide.none,
+        ),
+        focusedBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(12),
+          borderSide: BorderSide(
+            color: colorScheme.primary,
+            width: 2,
+          ),
+        ),
+      ),
+      checkboxTheme: CheckboxThemeData(
+        fillColor: WidgetStateProperty.resolveWith((states) {
+          if (states.contains(WidgetState.selected)) {
+            return colorScheme.primary;
+          }
+          return Colors.transparent;
+        }),
+        checkColor: WidgetStateProperty.all(colorScheme.onPrimary),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(4),
+        ),
+      ),
+      switchTheme: SwitchThemeData(
+        thumbColor: WidgetStateProperty.resolveWith((states) {
+          if (states.contains(WidgetState.selected)) {
+            return colorScheme.primary;
+          }
+          return colorScheme.outline;
+        }),
+        trackColor: WidgetStateProperty.resolveWith((states) {
+          if (states.contains(WidgetState.selected)) {
+            return colorScheme.primary.withValues(alpha: 0.5);
+          }
+          return colorScheme.surfaceContainerHighest;
+        }),
+      ),
+      snackBarTheme: SnackBarThemeData(
+        behavior: SnackBarBehavior.floating,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(12),
+        ),
+      ),
+    );
+  }
+}
+
 class NoteApp extends StatelessWidget {
   final AsyncMemoizer _memoizer = AsyncMemoizer();
 
@@ -23,10 +238,10 @@ class NoteApp extends StatelessWidget {
       await db.init();
 
       Config cfgPrimarySwatch = await db.getConfig(Config.primarySwatch);
-      tcn.setTheme(ThemeData(
-        primarySwatch: Colors.primaries[int.parse(cfgPrimarySwatch.value!)],
-        visualDensity: VisualDensity.adaptivePlatformDensity,
-      ));
+      final primaryColor = Colors.primaries[int.parse(cfgPrimarySwatch.value!)];
+
+      // 使用 Material 3 主题
+      tcn.setTheme(AppTheme.getLightTheme(primaryColor));
 
       Config cfgHiddenDone = await db.getConfig(Config.hiddenDone);
       scn.setHiddenDone(cfgHiddenDone.value == '1' ? true : false);
