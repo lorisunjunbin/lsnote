@@ -23,7 +23,7 @@ class SimpleLocalizations {
       'confirm': 'Pls confirm',
       'confirm2delete': 'Delete',
       'confirmYes': 'YES',
-      'colorPicker': 'Color',
+      'colorPicker': 'ThemeColor',
       'colorPickerClose': 'Close',
       'hiddenDoneLabel': 'Hide completed',
       'emptyNotes': 'No notes yet',
@@ -90,6 +90,11 @@ class SimpleLocalizations {
       'guessResultEight': 'Eight',
       'guessResultNine': 'Nine',
       'guessResultTen': 'Ten',
+      'collapseAll': 'Collapse All',
+      'expandAll': 'Expand All',
+      'copyTooltip': 'Copy',
+      'saveTooltip': 'Save',
+      'markDoneBeforeDelete': 'Mark as done before deleting',
     },
     'zh': {
       'title': 'LS记事本',
@@ -175,6 +180,11 @@ class SimpleLocalizations {
       'guessResultEight': '八',
       'guessResultNine': '九',
       'guessResultTen': '十',
+      'collapseAll': '全部收起',
+      'expandAll': '全部展开',
+      'copyTooltip': '复制',
+      'saveTooltip': '保存',
+      'markDoneBeforeDelete': '删除前请先标记为完成',
     }
   };
 

@@ -26,8 +26,7 @@ class GuessitemChangeNotifier with ChangeNotifier {
     }
     if (_isDifferentWithLast(tryAnswer)) {
       int currentStep = _guessItems.length + 1;
-      _guessItems.insert(
-          0,
+      _guessItems.add(
           GuessItem(
               tryTime: DateTime.now(),
               tryAnswer: tryAnswer,
@@ -47,7 +46,7 @@ class GuessitemChangeNotifier with ChangeNotifier {
     if (guessItems.isEmpty) {
       return true;
     }
-    return guessItems[0].tryAnswer != tryAnswer;
+    return guessItems.last.tryAnswer != tryAnswer;
   }
 
   int _randomIntInRange({int min = 0, int max = 9}) {

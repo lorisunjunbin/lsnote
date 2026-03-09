@@ -49,48 +49,18 @@ class _BackupState extends State<Backup> {
                 NoteLanding.routeName,
               ),
             ),
-            title: Text(sl?.getText('export_import') ?? 'Backup'),
-            actions: [
-              IconButton(
-                tooltip: sl?.getText('exportToJSON'),
-                icon: const Icon(Icons.file_upload),
-                onPressed: () async {
-                  await _populateJsonExport();
-                }),
-              IconButton(
-                tooltip: sl?.getText('backupExportToFileTooltip') ?? 'Export to File',
-                icon: const Icon(Icons.file_download),
-                onPressed: _exportJsonToFile),
-              IconButton(
-                tooltip: _isJsonFormatted
-                    ? (sl?.getText('backupCompressJsonTooltip') ?? 'Compress JSON')
-                    : (sl?.getText('backupFormatJsonTooltip') ?? 'Validate & Format JSON'),
-                icon: Icon(_isJsonFormatted ? Icons.compress : Icons.auto_fix_high),
-                onPressed: _validateAndFormatJson),
-              IconButton(
-                  tooltip: sl?.getText('importFromJSON'),
-                  icon: const Icon(Icons.save_alt),
-                  onPressed: _restoreDisabled ? null : _importJson)
-            ],
+            title: Text(
+              sl?.getText('export_import') ?? 'Backup',
+              style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w600),
+              overflow: TextOverflow.ellipsis,
+            ),
           ),
           body: Padding(
             padding: const EdgeInsets.all(8),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                if (_jsonStatus.isNotEmpty)
-                  Padding(
-                    padding: const EdgeInsets.only(bottom: 6),
-                    child: Text(
-                      _jsonStatus,
-                      style: TextStyle(
-                        color: _isJsonValid
-                            ? colorScheme.primary
-                            : colorScheme.error,
-                        fontSize: 12,
-                      ),
-                    ),
-                  ),
+                // Export path display only
                 if (_lastExportedFilePath != null)
                   Padding(
                     padding: const EdgeInsets.only(bottom: 6),
@@ -127,6 +97,55 @@ class _BackupState extends State<Backup> {
                       ),
                     ),
                   ),
+                // Action buttons
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 12),
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: _buildActionButton(
+                          icon: Icons.file_upload,
+                          label: sl?.getText('exportToJSON') ?? 'Export',
+                          onPressed: () async {
+                            await _populateJsonExport();
+                          },
+                          colorScheme: colorScheme,
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: _buildActionButton(
+                          icon: Icons.file_download,
+                          label: sl?.getText('backupExportToFileTooltip') ?? 'Save File',
+                          onPressed: _exportJsonToFile,
+                          colorScheme: colorScheme,
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: _buildActionButton(
+                          icon: _isJsonFormatted ? Icons.compress : Icons.auto_fix_high,
+                          label: _isJsonFormatted
+                              ? (sl?.getText('backupCompressJsonTooltip') ?? 'Compress')
+                              : (sl?.getText('backupFormatJsonTooltip') ?? 'Format'),
+                          onPressed: _validateAndFormatJson,
+                          colorScheme: colorScheme,
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: _buildActionButton(
+                          icon: Icons.save_alt,
+                          label: sl?.getText('importFromJSON') ?? 'Import',
+                          onPressed: _restoreDisabled ? null : _importJson,
+                          colorScheme: colorScheme,
+                          disabled: _restoreDisabled,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                // Editor
                 Expanded(
                   child: Scrollbar(
                     controller: _editorScrollCtlr,
@@ -169,10 +188,78 @@ class _BackupState extends State<Backup> {
                       ),
                     ),
                   ),
-                )
+                ),
+                // Validation message at the bottom
+                if (_jsonStatus.isNotEmpty)
+                  Padding(
+                    padding: const EdgeInsets.only(top: 8),
+                    child: Text(
+                      _jsonStatus,
+                      style: TextStyle(
+                        color: _isJsonValid
+                            ? colorScheme.primary
+                            : colorScheme.error,
+                        fontSize: 12,
+                      ),
+                    ),
+                  ),
               ],
             ),
           )),
+    );
+  }
+
+  Widget _buildActionButton({
+    required IconData icon,
+    required String label,
+    required VoidCallback? onPressed,
+    required ColorScheme colorScheme,
+    bool disabled = false,
+  }) {
+    final isEnabled = onPressed != null && !disabled;
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: isEnabled ? onPressed : null,
+        borderRadius: BorderRadius.circular(8),
+        child: Container(
+          padding: const EdgeInsets.symmetric(vertical: 8),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(8),
+            border: Border.all(
+              color: isEnabled
+                  ? colorScheme.primary
+                  : colorScheme.outlineVariant,
+              width: 1.5,
+            ),
+            color: isEnabled
+                ? colorScheme.primary.withValues(alpha: 0.08)
+                : colorScheme.surfaceContainerHighest.withValues(alpha: 0.5),
+          ),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(
+                icon,
+                color: isEnabled ? colorScheme.primary : colorScheme.outlineVariant,
+                size: 22,
+              ),
+              const SizedBox(height: 4),
+              Text(
+                label,
+                style: TextStyle(
+                  color: isEnabled ? colorScheme.primary : colorScheme.outlineVariant,
+                  fontSize: 11,
+                  fontWeight: FontWeight.w500,
+                ),
+                textAlign: TextAlign.center,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
+            ],
+          ),
+        ),
+      ),
     );
   }
 
@@ -342,27 +429,8 @@ class _BackupState extends State<Backup> {
         true,
         '${_t('backupValidJsonStatusPrefix', 'Valid JSON. Items ready to import: ')}${notes.length}',
       );
-
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(
-              '${_t('backupJsonValidSnackPrefix', 'JSON is valid and formatted. Items: ')}${notes.length}'
-            ),
-            backgroundColor: Theme.of(context).colorScheme.primaryContainer,
-          ),
-        );
-      }
     } catch (e) {
       _setValidationState(false, '${_t('backupInvalidNoteJsonPrefix', 'Invalid note JSON: ')}$e');
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('${_t('backupJsonInvalidPrefix', 'JSON is invalid: ')}$e'),
-            backgroundColor: Theme.of(context).colorScheme.errorContainer,
-          ),
-        );
-      }
     }
   }
 

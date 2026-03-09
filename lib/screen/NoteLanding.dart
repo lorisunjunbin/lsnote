@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:async/async.dart';
 import 'package:lorisun_note/screen/NumberPuzzles.dart';
 import 'package:provider/provider.dart';
@@ -91,7 +92,8 @@ class _NoteLandingState extends State<NoteLanding> {
     if (_items.isEmpty) {
       await _memoizer.runOnce(() async {
         final cfgPrimarySwatch = await db.getConfig(Config.primarySwatch);
-        _currentColorIndex = int.parse(cfgPrimarySwatch.value!);
+        final parsedIndex = int.tryParse(cfgPrimarySwatch.value ?? '0') ?? 0;
+        _currentColorIndex = parsedIndex.clamp(0, AppTheme.themeColorPalette.length - 1);
         _updateUI(ctx);
       });
     }
@@ -237,6 +239,9 @@ class _NoteLandingState extends State<NoteLanding> {
                       )
                     : null,
                 border: InputBorder.none,
+                enabledBorder: InputBorder.none,
+                focusedBorder: InputBorder.none,
+                disabledBorder: InputBorder.none,
                 contentPadding: const EdgeInsets.symmetric(
                   horizontal: 16,
                   vertical: 10,
@@ -250,7 +255,9 @@ class _NoteLandingState extends State<NoteLanding> {
                 _isAllExpanded ? Icons.unfold_less : Icons.unfold_more,
                 color: colorScheme.onSurfaceVariant,
               ),
-              tooltip: _isAllExpanded ? 'Collapse All' : 'Expand All',
+              tooltip: _isAllExpanded
+                  ? (sl?.getText('collapseAll') ?? 'Collapse All')
+                  : (sl?.getText('expandAll') ?? 'Expand All'),
               onPressed: _toggleAllCards,
             ),
           Padding(
@@ -379,6 +386,11 @@ class _NoteLandingState extends State<NoteLanding> {
     }
   }
 
+  Future<void> _handleCardCopy(Note item, SimpleLocalizations sl) async {
+    final content = _ctrls['${item.id}cblt']?.value.text ?? item.content ?? '';
+    await Clipboard.setData(ClipboardData(text: content));
+  }
+
   Future<void> _handleCardDelete(Note item, SimpleLocalizations sl) async {
     if (item.isDone) {
       showDialog<void>(
@@ -414,7 +426,7 @@ class _NoteLandingState extends State<NoteLanding> {
     } else {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('Mark as done before deleting'),
+          content: Text(sl.getText('markDoneBeforeDelete') ?? 'Mark as done before deleting'),
           duration: const Duration(seconds: 2),
           behavior: SnackBarBehavior.floating,
         ),
@@ -454,8 +466,8 @@ class _NoteLandingState extends State<NoteLanding> {
                       spacing: 12,
                       runSpacing: 12,
                       alignment: WrapAlignment.center,
-                      children: List.generate(Colors.primaries.length, (index) {
-                        final color = Colors.primaries[index];
+                      children: List.generate(AppTheme.themeColorPalette.length, (index) {
+                        final color = AppTheme.themeColorPalette[index];
                         final isSelected = index == _currentColorIndex;
                         return InkWell(
                           onTap: () {
@@ -538,11 +550,20 @@ class _NoteLandingState extends State<NoteLanding> {
           color: item.isDone
               ? colorScheme.surfaceContainerLowest
               : colorScheme.surfaceContainerLow,
-          shape: const RoundedRectangleBorder(
+          shape: RoundedRectangleBorder(
+            side: !item.isDone
+                ? BorderSide(
+                    color: colorScheme.primary.withValues(alpha: 0.55),
+                    width: 0.35,
+                  )
+                : BorderSide.none,
               borderRadius: BorderRadius.zero,
             ),
           child: Padding(
-            padding: const EdgeInsets.all(6),
+            padding: EdgeInsets.symmetric(
+              horizontal: 4,
+              vertical: isExpanded ? 4 : 1,
+            ),
             child: Row(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
@@ -550,13 +571,15 @@ class _NoteLandingState extends State<NoteLanding> {
                   padding: EdgeInsets.zero,
                   child: Checkbox(
                     value: item.isDone,
+                    visualDensity: VisualDensity.compact,
+                    materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
                     onChanged: (bool? newValue) {
                       setState(() => item.isDone = newValue ?? false);
                       db.toggleNoteItem(item);
                     },
                   ),
                 ),
-                const SizedBox(width: 4),
+                const SizedBox(width: 0),
                 Expanded(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
@@ -572,8 +595,8 @@ class _NoteLandingState extends State<NoteLanding> {
                                     isExpanded
                                         ? Icons.expand_more
                                         : Icons.chevron_right,
-                                    color: colorScheme.onSurfaceVariant,
-                                    size: 18,
+                                    color: isExpanded ? colorScheme.primary : colorScheme.onSurfaceVariant,
+                                    size: 24,
                                   ),
                                   const SizedBox(width: 4),
                                   Expanded(
@@ -652,7 +675,7 @@ class _NoteLandingState extends State<NoteLanding> {
                                 vertical: 3,
                               ),
                               decoration: BoxDecoration(
-                                color: colorScheme.surfaceContainerHighest,
+                                color: colorScheme.primaryContainer.withValues(alpha: 0.4),
                                 borderRadius: BorderRadius.zero,
                               ),
                               child: Row(
@@ -667,7 +690,7 @@ class _NoteLandingState extends State<NoteLanding> {
                                   Text(
                                     '${item.targetDate.toString().substring(0, 10)}',
                                     style: TextStyle(
-                                      color: colorScheme.onSurfaceVariant,
+                                      color: colorScheme.primary.withValues(alpha: 0.8),
                                       fontSize: 11,
                                       fontWeight: FontWeight.w500,
                                     ),
@@ -677,15 +700,25 @@ class _NoteLandingState extends State<NoteLanding> {
                             ),
                             const Spacer(),
                             IconButton(
-                              icon: Icon(Icons.save_outlined, size: 14),
+                              icon: Icon(Icons.copy_outlined, size: 20),
+                              color: colorScheme.onSurfaceVariant,
+                              tooltip: sl.getText('copyTooltip') ?? 'Copy',
+                              padding: EdgeInsets.zero,
+                              constraints: BoxConstraints(minWidth: 32, minHeight: 28),
+                              onPressed: () => _handleCardCopy(item, sl),
+                            ),
+                            const SizedBox(width: 8),
+                            IconButton(
+                              icon: Icon(Icons.save_outlined, size: 20),
                               color: colorScheme.primary,
-                              tooltip: sl.getText('contentChanged') ?? 'Save',
+                              tooltip: sl.getText('saveTooltip') ?? 'Save',
                               padding: EdgeInsets.zero,
                               constraints: BoxConstraints(minWidth: 32, minHeight: 28),
                               onPressed: () => _handleCardSave(item, sl),
                             ),
+                            const SizedBox(width: 8),
                             IconButton(
-                              icon: Icon(Icons.delete_outline, size: 14),
+                              icon: Icon(Icons.delete_outline, size: 20),
                               color: item.isDone
                                   ? colorScheme.error
                                   : colorScheme.onSurfaceVariant,
@@ -706,6 +739,7 @@ class _NoteLandingState extends State<NoteLanding> {
         ),
       );
     }).toList();
+
     return _listTiles;
   }
 }

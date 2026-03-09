@@ -24,15 +24,41 @@ class _NumberPuzzlesState extends State<NumberPuzzles> {
 
   final _focusNodes = [FocusNode(), FocusNode(), FocusNode(), FocusNode()];
 
+  int _emptyClickCount = 0;
+  static const int _resetClickThreshold = 3;
+
   void _guess(GuessitemChangeNotifier provider) {
     if (provider.isMatched) {
       provider.reset();
       _reset();
+      _clearEmptyClickCount();
     } else if (_validateInput()) {
       provider.addGuessItem(_ctlrs.map((ctl) => ctl.text).toList().join());
+      _clearEmptyClickCount();
       if (!provider.isMatched) {
         _reset();
       }
+    } else {
+      _handleEmptyGuess(provider);
+    }
+  }
+
+  void _handleEmptyGuess(GuessitemChangeNotifier provider) {
+    setState(() {
+      _emptyClickCount++;
+      if (_emptyClickCount >= _resetClickThreshold) {
+        provider.reset();
+        _reset();
+        _clearEmptyClickCount();
+      }
+    });
+  }
+
+  void _clearEmptyClickCount() {
+    if (_emptyClickCount > 0) {
+      setState(() {
+        _emptyClickCount = 0;
+      });
     }
   }
 
@@ -355,6 +381,14 @@ $bText ${sl?.getText('resultCorrectValue') ?? 'numbers correct but in wrong posi
     );
   }
 
+  String _getResetHintText(SimpleLocalizations? sl, int clickCount) {
+    final remaining = _resetClickThreshold - clickCount;
+    if (sl?.locale.languageCode == 'zh') {
+      return '再点击 $remaining 次重新开始';
+    }
+    return 'Tap $remaining more time${remaining > 1 ? 's' : ''} to restart';
+  }
+
   void _back2Home(BuildContext context) {
     Navigator.popAndPushNamed(context, NoteLanding.routeName);
   }
@@ -439,7 +473,32 @@ $bText ${sl?.getText('resultCorrectValue') ?? 'numbers correct but in wrong posi
               padding: const EdgeInsets.only(top: 12),
               children: _buildGuessList(guessitemProvider, sl),
             ),
-          )
+          ),
+          // Reset hint at bottom
+          if (_emptyClickCount > 0)
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+              color: colorScheme.surfaceContainerLow,
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Icon(
+                    Icons.info_outline,
+                    size: 16,
+                    color: colorScheme.onSurfaceVariant,
+                  ),
+                  const SizedBox(width: 8),
+                  Text(
+                    _getResetHintText(sl, _emptyClickCount),
+                    style: TextStyle(
+                      fontSize: 13,
+                      color: colorScheme.onSurfaceVariant,
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                ],
+              ),
+            ),
         ],
       ));
   }

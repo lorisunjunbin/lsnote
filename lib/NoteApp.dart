@@ -15,6 +15,10 @@ import 'screen/Login.dart';
 import 'screen/Backup.dart';
 
 class AppTheme {
+  // Keep only 16 colors in picker/theme index mapping; exclude brown/blueGrey.
+  static final List<Color> themeColorPalette =
+      Colors.primaries.take(16).toList(growable: false);
+
   static ThemeData getLightTheme(Color primaryColor) {
     final colorScheme = ColorScheme.fromSeed(
       seedColor: primaryColor,
@@ -24,6 +28,7 @@ class AppTheme {
     return ThemeData(
       useMaterial3: true,
       colorScheme: colorScheme,
+      primaryColor: primaryColor,
       appBarTheme: AppBarTheme(
         centerTitle: false,
         elevation: 0,
@@ -44,7 +49,9 @@ class AppTheme {
         color: colorScheme.surfaceContainerHighest.withValues(alpha: 0.3),
       ),
       floatingActionButtonTheme: FloatingActionButtonThemeData(
-        elevation: 4,
+        elevation: 6,
+        backgroundColor: colorScheme.primary,
+        foregroundColor: colorScheme.onPrimary,
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(16),
         ),
@@ -72,11 +79,11 @@ class AppTheme {
         ),
         border: OutlineInputBorder(
           borderRadius: BorderRadius.circular(12),
-          borderSide: BorderSide.none,
+          borderSide: BorderSide(color: colorScheme.outline.withValues(alpha: 0.3)),
         ),
         enabledBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(12),
-          borderSide: BorderSide.none,
+          borderSide: BorderSide(color: colorScheme.outline.withValues(alpha: 0.3)),
         ),
         focusedBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(12),
@@ -97,6 +104,10 @@ class AppTheme {
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(4),
         ),
+        side: BorderSide(
+          color: colorScheme.primary.withValues(alpha: 0.6),
+          width: 2,
+        ),
       ),
       switchTheme: SwitchThemeData(
         thumbColor: WidgetStateProperty.resolveWith((states) {
@@ -107,9 +118,12 @@ class AppTheme {
         }),
         trackColor: WidgetStateProperty.resolveWith((states) {
           if (states.contains(WidgetState.selected)) {
-            return colorScheme.primary.withValues(alpha: 0.5);
+            return colorScheme.primary.withValues(alpha: 0.6);
           }
           return colorScheme.surfaceContainerHighest;
+        }),
+        trackOutlineColor: WidgetStateProperty.resolveWith((states) {
+          return colorScheme.primary.withValues(alpha: 0.3);
         }),
       ),
       snackBarTheme: SnackBarThemeData(
@@ -117,6 +131,8 @@ class AppTheme {
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(12),
         ),
+        backgroundColor: colorScheme.primary,
+        contentTextStyle: TextStyle(color: colorScheme.onPrimary),
       ),
     );
   }
@@ -130,6 +146,7 @@ class AppTheme {
     return ThemeData(
       useMaterial3: true,
       colorScheme: colorScheme,
+      primaryColor: primaryColor,
       appBarTheme: AppBarTheme(
         centerTitle: false,
         elevation: 0,
@@ -150,7 +167,9 @@ class AppTheme {
         color: colorScheme.surfaceContainerHighest.withValues(alpha: 0.3),
       ),
       floatingActionButtonTheme: FloatingActionButtonThemeData(
-        elevation: 4,
+        elevation: 6,
+        backgroundColor: colorScheme.primary,
+        foregroundColor: colorScheme.onPrimary,
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(16),
         ),
@@ -178,11 +197,11 @@ class AppTheme {
         ),
         border: OutlineInputBorder(
           borderRadius: BorderRadius.circular(12),
-          borderSide: BorderSide.none,
+          borderSide: BorderSide(color: colorScheme.outline.withValues(alpha: 0.3)),
         ),
         enabledBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(12),
-          borderSide: BorderSide.none,
+          borderSide: BorderSide(color: colorScheme.outline.withValues(alpha: 0.3)),
         ),
         focusedBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(12),
@@ -203,6 +222,10 @@ class AppTheme {
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(4),
         ),
+        side: BorderSide(
+          color: colorScheme.primary.withValues(alpha: 0.6),
+          width: 2,
+        ),
       ),
       switchTheme: SwitchThemeData(
         thumbColor: WidgetStateProperty.resolveWith((states) {
@@ -213,9 +236,12 @@ class AppTheme {
         }),
         trackColor: WidgetStateProperty.resolveWith((states) {
           if (states.contains(WidgetState.selected)) {
-            return colorScheme.primary.withValues(alpha: 0.5);
+            return colorScheme.primary.withValues(alpha: 0.6);
           }
           return colorScheme.surfaceContainerHighest;
+        }),
+        trackOutlineColor: WidgetStateProperty.resolveWith((states) {
+          return colorScheme.primary.withValues(alpha: 0.3);
         }),
       ),
       snackBarTheme: SnackBarThemeData(
@@ -223,6 +249,8 @@ class AppTheme {
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(12),
         ),
+        backgroundColor: colorScheme.primary,
+        contentTextStyle: TextStyle(color: colorScheme.onPrimary),
       ),
     );
   }
@@ -237,7 +265,9 @@ class NoteApp extends StatelessWidget {
       await db.init();
 
       Config cfgPrimarySwatch = await db.getConfig(Config.primarySwatch);
-      final primaryColor = Colors.primaries[int.parse(cfgPrimarySwatch.value!)];
+      final parsedIndex = int.tryParse(cfgPrimarySwatch.value ?? '0') ?? 0;
+      final safeIndex = parsedIndex.clamp(0, AppTheme.themeColorPalette.length - 1);
+      final primaryColor = AppTheme.themeColorPalette[safeIndex];
 
       tcn.setTheme(AppTheme.getLightTheme(primaryColor));
 
