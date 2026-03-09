@@ -28,10 +28,44 @@ class _NoteLandingState extends State<NoteLanding> {
   static const int _sequenceStep = 1024;
 
   List<Note> _items = [];
-  Note _currentNote = Note();
   Map<String, TextEditingController> _ctrls = {};
   bool _reorderInFlight = false;
   int _currentColorIndex = 0;
+
+  // 卡片展开/收起状态管理
+  final Map<int, bool> _cardExpandedStates = {};
+
+  // 切换单个卡片的展开/收起状态
+  void _toggleCardExpansion(int noteId) {
+    setState(() {
+      _cardExpandedStates[noteId] = !(_cardExpandedStates[noteId] ?? false);
+    });
+  }
+
+  // 检查是否所有卡片都已展开
+  bool get _isAllExpanded {
+    if (_items.isEmpty) return false;
+    return _items.every((item) => _cardExpandedStates[item.id!] ?? false);
+  }
+
+  // 切换所有卡片的展开/收起状态
+  void _toggleAllCards() {
+    if (_isAllExpanded) {
+      // 当前全是展开状态，则全部收起
+      setState(() {
+        for (var item in _items) {
+          _cardExpandedStates[item.id!] = false;
+        }
+      });
+    } else {
+      // 当前有收起的卡片，则全部展开
+      setState(() {
+        for (var item in _items) {
+          _cardExpandedStates[item.id!] = true;
+        }
+      });
+    }
+  }
 
   Future<void> _onReorder(int oldIndex, int newIndex) async {
     if (_reorderInFlight) return;
@@ -175,7 +209,7 @@ class _NoteLandingState extends State<NoteLanding> {
   Widget _buildSearchBar(SimpleLocalizations? sl, ColorScheme colorScheme,
       SwitcherChangeNotifier switcherProvider) {
     return Container(
-      height: 40,
+      height: 48,
       decoration: BoxDecoration(
         color: colorScheme.surfaceContainerHighest,
       ),
@@ -217,6 +251,16 @@ class _NoteLandingState extends State<NoteLanding> {
               ),
             ),
           ),
+          // 展开/收起所有按钮（根据状态切换）
+          if (_items.isNotEmpty)
+            IconButton(
+              icon: Icon(
+                _isAllExpanded ? Icons.unfold_less_rounded : Icons.unfold_more_rounded,
+                color: colorScheme.onSurfaceVariant,
+              ),
+              tooltip: _isAllExpanded ? 'Collapse All' : 'Expand All',
+              onPressed: _toggleAllCards,
+            ),
           // 隐藏已完成开关
           Padding(
             padding: const EdgeInsets.only(right: 12),
@@ -297,39 +341,25 @@ class _NoteLandingState extends State<NoteLanding> {
     );
   }
 
-  /// Material 3 底部导航栏
+  /// Material 3 底部导航栏（移除 Save 和 Delete）
   Widget _buildBottomNavigationBar(BuildContext context, SimpleLocalizations sl,
       ColorScheme colorScheme, SwitcherChangeNotifier switcherProvider) {
     return BottomNavigationBar(
             currentIndex: 0,
             onTap: (index) {
               switch (index) {
-                case 0: // Save
-                  _handleSave(sl);
-                  break;
-                case 1: // Delete
-                  _handleDelete(sl);
-                  break;
-                case 2: // Backup
+                case 0: // Backup
                   Navigator.of(context).pushReplacementNamed(Backup.routeName);
                   break;
-                case 3: // Theme
+                case 1: // Theme
                   _showColorPickerDialog(context, sl, colorScheme);
                   break;
-                case 4: // Game
+                case 2: // Game
                   Navigator.of(context).pushReplacementNamed(NumberPuzzles.routeName);
                   break;
               }
             },
             items: [
-              BottomNavigationBarItem(
-                icon: const Icon(Icons.save_rounded),
-                label: sl.getText('contentChanged') ?? 'Save',
-              ),
-              BottomNavigationBarItem(
-                icon: const Icon(Icons.delete_rounded),
-                label: sl.getText('confirm2delete') ?? 'Delete',
-              ),
               BottomNavigationBarItem(
                 icon: const Icon(Icons.backup_rounded),
                 label: sl.getText('export_import') ?? 'Backup',
@@ -346,26 +376,25 @@ class _NoteLandingState extends State<NoteLanding> {
           );
   }
 
-  /// 处理保存操作
-  Future<void> _handleSave(SimpleLocalizations sl) async {
-    if (_currentNote.id != null &&
-        _ctrls.containsKey('${_currentNote.id}cblt')) {
+  /// 处理单个卡片保存操作
+  Future<void> _handleCardSave(Note item, SimpleLocalizations sl) async {
+    if (_ctrls.containsKey('${item.id}cblt')) {
       await db.updateNoteItemContent(
-          _currentNote.id!, _ctrls['${_currentNote.id}cblt']!.value.text);
+          item.id!, _ctrls['${item.id}cblt']!.value.text);
       _showMessageDialog(
           sl.getText('contentChanged')!,
           [
-            '${_currentNote.title}',
+            '${item.title}',
             '',
-            _ctrls['${_currentNote.id}cblt']!.value.text,
+            _ctrls['${item.id}cblt']!.value.text,
           ],
           sl.getText('noticed')!);
     }
   }
 
-  /// 处理删除操作
-  Future<void> _handleDelete(SimpleLocalizations sl) async {
-    if (_currentNote.isDone) {
+  /// 处理单个卡片删除操作
+  Future<void> _handleCardDelete(Note item, SimpleLocalizations sl) async {
+    if (item.isDone) {
       showDialog<void>(
           context: context,
           builder: (context) {
@@ -378,20 +407,33 @@ class _NoteLandingState extends State<NoteLanding> {
                   child: ListBody(
                     children: [
                       Text(sl.getText('confirm2delete')!),
-                      Text('${_currentNote.title!}')
+                      Text('${item.title!}')
                     ],
                   ),
                 ),
                 actions: <Widget>[
                   TextButton(
+                    child: Text(sl.getText('cancelLabel') ?? 'Cancel'),
+                    onPressed: () => Navigator.of(context).pop(),
+                  ),
+                  TextButton(
                       child: Text(sl.getText('confirmYes')!),
                       onPressed: () {
-                        db.deleteNoteItem(this._currentNote);
+                        db.deleteNoteItem(item);
                         Navigator.of(context).pop();
                         _updateUI(context);
                       })
                 ]);
           });
+    } else {
+      // 未完成的笔记，提示先标记为完成
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Mark as done before deleting'),
+          duration: const Duration(seconds: 2),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
     }
   }
 
@@ -493,6 +535,7 @@ class _NoteLandingState extends State<NoteLanding> {
   }
 
   List<Widget> _buildItemList(ThemeData theme) {
+    final sl = SimpleLocalizations.of(context)!;
     final colorScheme = theme.colorScheme;
 
     List<Widget> _listTiles = _items.asMap().entries.map((entry) {
@@ -500,6 +543,9 @@ class _NoteLandingState extends State<NoteLanding> {
 
       _ctrls.putIfAbsent(
           '${item.id}cblt', () => TextEditingController(text: item.content));
+
+      // 获取卡片的展开状态，默认为收起
+      final isExpanded = _cardExpandedStates[item.id!] ?? false;
 
       return Padding(
         key: Key('${item.id}'),
@@ -515,7 +561,7 @@ class _NoteLandingState extends State<NoteLanding> {
           child: Padding(
             padding: const EdgeInsets.all(6),
             child: Row(
-              crossAxisAlignment: CrossAxisAlignment.center,
+              crossAxisAlignment: isExpanded ? CrossAxisAlignment.center : CrossAxisAlignment.center,
               children: [
                 // 复选框
                 Padding(
@@ -523,7 +569,6 @@ class _NoteLandingState extends State<NoteLanding> {
                   child: Checkbox(
                     value: item.isDone,
                     onChanged: (bool? newValue) {
-                      _currentNote = item;
                       setState(() => item.isDone = newValue ?? false);
                       db.toggleNoteItem(item);
                     },
@@ -535,18 +580,35 @@ class _NoteLandingState extends State<NoteLanding> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      // 标题和日期行
+                      // 标题和日期行（始终显示）
                       Row(
                         children: [
                           Expanded(
-                            child: Text(
-                              '${item.title}',
-                              style: TextStyle(
-                                color: item.isDone
-                                    ? colorScheme.onSurfaceVariant
-                                    : colorScheme.onSurface,
-                                fontSize: 16,
-                                fontWeight: FontWeight.w600,
+                            child: GestureDetector(
+                              onTap: () => _toggleCardExpansion(item.id!),
+                              child: Row(
+                                children: [
+                                  Icon(
+                                    isExpanded
+                                        ? Icons.expand_more_rounded
+                                        : Icons.chevron_right_rounded,
+                                    color: colorScheme.onSurfaceVariant,
+                                    size: 20,
+                                  ),
+                                  const SizedBox(width: 4),
+                                  Expanded(
+                                    child: Text(
+                                      '${item.title}',
+                                      style: TextStyle(
+                                        color: item.isDone
+                                            ? colorScheme.onSurfaceVariant
+                                            : colorScheme.onSurface,
+                                        fontSize: 16,
+                                        fontWeight: FontWeight.w600,
+                                      ),
+                                    ),
+                                  ),
+                                ],
                               ),
                             ),
                           ),
@@ -569,9 +631,30 @@ class _NoteLandingState extends State<NoteLanding> {
                               ),
                             ),
                           ),
+                          // 保存按钮（仅展开时显示）
+                          if (isExpanded)
+                            IconButton(
+                              icon: Icon(Icons.save_rounded, size: 18),
+                              color: colorScheme.primary,
+                              tooltip: sl.getText('contentChanged') ?? 'Save',
+                              padding: EdgeInsets.zero,
+                              constraints: BoxConstraints(minWidth: 32, minHeight: 32),
+                              onPressed: () => _handleCardSave(item, sl),
+                            ),
+                          // 删除按钮
+                          IconButton(
+                            icon: Icon(Icons.delete_outline_rounded, size: 18),
+                            color: item.isDone
+                                ? colorScheme.error
+                                : colorScheme.onSurfaceVariant,
+                            tooltip: sl.getText('confirm2delete') ?? 'Delete',
+                            padding: EdgeInsets.zero,
+                            constraints: BoxConstraints(minWidth: 32, minHeight: 32),
+                            onPressed: () => _handleCardDelete(item, sl),
+                          ),
                           // 拖拽手柄
                           Padding(
-                            padding: const EdgeInsets.only(left: 8, top: 4),
+                            padding: const EdgeInsets.only(left: 4, top: 4),
                             child: ReorderableDragStartListener(
                               index: entry.key,
                               child: Icon(
@@ -583,46 +666,47 @@ class _NoteLandingState extends State<NoteLanding> {
                           ),
                         ],
                       ),
-                      const SizedBox(height: 6),
-                      // 内容输入框
-                      TextField(
-                        key: Key('${item.id}tf'),
-                        controller: _ctrls['${item.id}cblt'],
-                        keyboardType: TextInputType.multiline,
-                        maxLines: null,
-                        style: TextStyle(
-                          color: item.isDone
-                              ? colorScheme.onSurfaceVariant
-                              : colorScheme.onSurface,
-                          fontSize: 15,
-                          height: 1.4,
-                        ),
-                        decoration: InputDecoration(
-                          border: InputBorder.none,
-                          contentPadding: const EdgeInsets.all(8),
-                          filled: true,
-                          fillColor: item.isDone
-                              ? colorScheme.surfaceContainerHighest
-                              : colorScheme.surface,
-                          enabledBorder: const OutlineInputBorder(
-                            borderSide: BorderSide.none,
-                            borderRadius: BorderRadius.zero,
+                      // 展开时显示内容输入框
+                      if (isExpanded) ...[
+                        const SizedBox(height: 6),
+                        TextField(
+                          key: Key('${item.id}tf'),
+                          controller: _ctrls['${item.id}cblt'],
+                          keyboardType: TextInputType.multiline,
+                          maxLines: null,
+                          style: TextStyle(
+                            color: item.isDone
+                                ? colorScheme.onSurfaceVariant
+                                : colorScheme.onSurface,
+                            fontSize: 15,
+                            height: 1.4,
                           ),
-                          disabledBorder: const OutlineInputBorder(
-                            borderSide: BorderSide.none,
-                            borderRadius: BorderRadius.zero,
-                          ),
-                          focusedBorder: OutlineInputBorder(
-                            borderSide: BorderSide(
-                              color: colorScheme.primary,
-                              width: 2,
+                          decoration: InputDecoration(
+                            border: InputBorder.none,
+                            contentPadding: const EdgeInsets.all(8),
+                            filled: true,
+                            fillColor: item.isDone
+                                ? colorScheme.surfaceContainerHighest
+                                : colorScheme.surface,
+                            enabledBorder: const OutlineInputBorder(
+                              borderSide: BorderSide.none,
+                              borderRadius: BorderRadius.zero,
                             ),
-                            borderRadius: BorderRadius.zero,
+                            disabledBorder: const OutlineInputBorder(
+                              borderSide: BorderSide.none,
+                              borderRadius: BorderRadius.zero,
+                            ),
+                            focusedBorder: OutlineInputBorder(
+                              borderSide: BorderSide(
+                                color: colorScheme.primary,
+                                width: 2,
+                              ),
+                              borderRadius: BorderRadius.zero,
+                            ),
                           ),
+                          textCapitalization: TextCapitalization.sentences,
                         ),
-                        onTap: () => _currentNote = item,
-                        textCapitalization: TextCapitalization.sentences,
-                      ),
+                      ],
                     ],
                   ),
                 ),

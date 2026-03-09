@@ -78,24 +78,24 @@ class _NoteItemState extends State<NoteItem>
           child: SlideTransition(
             position: _slideAnimation,
             child: SingleChildScrollView(
-              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   _buildSectionTitle(sl, 'targetDate', 'Target Date'),
-                  const SizedBox(height: 12),
+                  const SizedBox(height: 8),
                   _buildDatepickerCard(colorScheme, sl),
-                  const SizedBox(height: 28),
-                  _buildSectionTitle(sl, 'titleLabel', 'Title'),
-                  const SizedBox(height: 12),
-                  _buildNoteTitleTextField(colorScheme, sl),
-                  const SizedBox(height: 24),
-                  _buildSectionTitle(sl, 'contentLabel', 'Content'),
-                  const SizedBox(height: 12),
-                  _buildNoteDetailTextField(colorScheme, sl),
-                  const SizedBox(height: 40),
-                  _buildSaveButton(colorScheme, sl),
                   const SizedBox(height: 16),
+                  _buildSectionTitle(sl, 'titleLabel', 'Title'),
+                  const SizedBox(height: 8),
+                  _buildNoteTitleTextField(colorScheme, sl),
+                  const SizedBox(height: 16),
+                  _buildSectionTitle(sl, 'contentLabel', 'Content'),
+                  const SizedBox(height: 8),
+                  _buildNoteDetailTextField(colorScheme, sl),
+                  const SizedBox(height: 24),
+                  _buildSaveButton(colorScheme, sl),
+                  const SizedBox(height: 12),
                 ],
               ),
             ),
@@ -110,7 +110,7 @@ class _NoteItemState extends State<NoteItem>
       BuildContext context, SimpleLocalizations sl, ColorScheme colorScheme) {
     return AppBar(
       leading: IconButton(
-        icon: const Icon(Icons.arrow_back_rounded),
+        icon: const Icon(Icons.arrow_back),
         onPressed: () => NavigationHelper.replaceTo(
           context,
           NoteLanding.routeName,
@@ -120,7 +120,7 @@ class _NoteItemState extends State<NoteItem>
       scrolledUnderElevation: 1,
       title: Text(
         sl.getText('addNote') ?? 'New Note',
-        style: TextStyle(
+        style: const TextStyle(
           fontWeight: FontWeight.w600,
         ),
       ),
@@ -133,7 +133,7 @@ class _NoteItemState extends State<NoteItem>
     return Text(
       sl.getText(key) ?? fallback,
       style: TextStyle(
-        fontSize: 14,
+        fontSize: 13,
         fontWeight: FontWeight.w600,
         color: colorScheme.primary,
         letterSpacing: 0.5,
@@ -145,28 +145,27 @@ class _NoteItemState extends State<NoteItem>
   Widget _buildDatepickerCard(ColorScheme colorScheme, SimpleLocalizations sl) {
     return Material(
       color: colorScheme.surfaceContainerLow,
-      borderRadius: BorderRadius.circular(16),
+      borderRadius: BorderRadius.zero,
       child: InkWell(
-        borderRadius: BorderRadius.circular(16),
         onTap: () => _showDatePicker(sl, colorScheme),
         child: Container(
-          padding: const EdgeInsets.all(20),
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
           child: Row(
             children: [
               Container(
-                width: 48,
-                height: 48,
+                width: 40,
+                height: 40,
                 decoration: BoxDecoration(
                   color: colorScheme.primaryContainer,
-                  borderRadius: BorderRadius.circular(12),
+                  borderRadius: BorderRadius.zero,
                 ),
                 child: Icon(
-                  Icons.calendar_month_rounded,
+                  Icons.calendar_month,
                   color: colorScheme.onPrimaryContainer,
-                  size: 24,
+                  size: 22,
                 ),
               ),
-              const SizedBox(width: 16),
+              const SizedBox(width: 12),
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -174,16 +173,16 @@ class _NoteItemState extends State<NoteItem>
                     Text(
                       sl.getText('targetDate') ?? 'Target Date',
                       style: TextStyle(
-                        fontSize: 13,
+                        fontSize: 12,
                         color: colorScheme.onSurfaceVariant,
                         fontWeight: FontWeight.w500,
                       ),
                     ),
-                    const SizedBox(height: 6),
+                    const SizedBox(height: 4),
                     Text(
                       _formatDate(_datetime),
                       style: TextStyle(
-                        fontSize: 18,
+                        fontSize: 16,
                         fontWeight: FontWeight.w600,
                         color: colorScheme.onSurface,
                       ),
@@ -192,9 +191,9 @@ class _NoteItemState extends State<NoteItem>
                 ),
               ),
               Icon(
-                Icons.chevron_right_rounded,
+                Icons.chevron_right,
                 color: colorScheme.onSurfaceVariant,
-                size: 24,
+                size: 20,
               ),
             ],
           ),
@@ -251,7 +250,7 @@ class _NoteItemState extends State<NoteItem>
       keyboardType: TextInputType.text,
       textCapitalization: TextCapitalization.sentences,
       style: TextStyle(
-        fontSize: 18,
+        fontSize: 16,
         fontWeight: FontWeight.w500,
         color: colorScheme.onSurface,
       ),
@@ -264,30 +263,30 @@ class _NoteItemState extends State<NoteItem>
         filled: true,
         fillColor: colorScheme.surfaceContainerHighest,
         border: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(16),
+          borderRadius: BorderRadius.zero,
           borderSide: BorderSide.none,
         ),
         enabledBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(16),
+          borderRadius: BorderRadius.zero,
           borderSide: BorderSide.none,
         ),
         focusedBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(16),
+          borderRadius: BorderRadius.zero,
           borderSide: BorderSide(
             color: colorScheme.primary,
             width: 2,
           ),
         ),
         errorBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(16),
+          borderRadius: BorderRadius.zero,
           borderSide: BorderSide(
             color: colorScheme.error,
             width: 2,
           ),
         ),
         contentPadding: const EdgeInsets.symmetric(
-          horizontal: 20,
-          vertical: 18,
+          horizontal: 16,
+          vertical: 14,
         ),
       ),
     );
@@ -302,7 +301,7 @@ class _NoteItemState extends State<NoteItem>
       minLines: 8,
       textCapitalization: TextCapitalization.sentences,
       style: TextStyle(
-        fontSize: 16,
+        fontSize: 15,
         height: 1.5,
         color: colorScheme.onSurface,
       ),
@@ -315,23 +314,23 @@ class _NoteItemState extends State<NoteItem>
         filled: true,
         fillColor: colorScheme.surfaceContainerHighest,
         border: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(16),
+          borderRadius: BorderRadius.zero,
           borderSide: BorderSide.none,
         ),
         enabledBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(16),
+          borderRadius: BorderRadius.zero,
           borderSide: BorderSide.none,
         ),
         focusedBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(16),
+          borderRadius: BorderRadius.zero,
           borderSide: BorderSide(
             color: colorScheme.primary,
             width: 2,
           ),
         ),
         contentPadding: const EdgeInsets.symmetric(
-          horizontal: 20,
-          vertical: 16,
+          horizontal: 16,
+          vertical: 12,
         ),
       ),
     );
@@ -341,13 +340,13 @@ class _NoteItemState extends State<NoteItem>
   Widget _buildSaveButton(ColorScheme colorScheme, SimpleLocalizations sl) {
     return SizedBox(
       width: double.infinity,
-      height: 56,
+      height: 48,
       child: FilledButton.icon(
-        icon: const Icon(Icons.save_rounded, size: 24),
+        icon: const Icon(Icons.save, size: 20),
         label: Text(
           sl.getText('saveLabel') ?? 'Save',
           style: const TextStyle(
-            fontSize: 16,
+            fontSize: 15,
             fontWeight: FontWeight.w600,
             letterSpacing: 0.5,
           ),
@@ -356,8 +355,8 @@ class _NoteItemState extends State<NoteItem>
           backgroundColor: colorScheme.primary,
           foregroundColor: colorScheme.onPrimary,
           elevation: 0,
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(16),
+          shape: const RoundedRectangleBorder(
+            borderRadius: BorderRadius.zero,
           ),
         ),
         onPressed: () => _handleSave(sl, colorScheme),
@@ -372,7 +371,7 @@ class _NoteItemState extends State<NoteItem>
         SnackBar(
           content: Row(
             children: [
-              Icon(Icons.error_outline_rounded, color: colorScheme.onPrimaryContainer),
+              Icon(Icons.error_outline, color: colorScheme.onPrimaryContainer),
               const SizedBox(width: 12),
               Expanded(
                 child: Text(
@@ -385,8 +384,8 @@ class _NoteItemState extends State<NoteItem>
           duration: const Duration(seconds: 2),
           behavior: SnackBarBehavior.floating,
           backgroundColor: colorScheme.primaryContainer,
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(12),
+          shape: const RoundedRectangleBorder(
+            borderRadius: BorderRadius.zero,
           ),
           margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
         ),
@@ -401,8 +400,8 @@ class _NoteItemState extends State<NoteItem>
         content: Row(
           children: [
             SizedBox(
-              width: 20,
-              height: 20,
+              width: 18,
+              height: 18,
               child: CircularProgressIndicator(
                 strokeWidth: 2,
                 valueColor: AlwaysStoppedAnimation<Color>(colorScheme.onPrimaryContainer),
@@ -418,8 +417,8 @@ class _NoteItemState extends State<NoteItem>
         duration: const Duration(milliseconds: 800),
         behavior: SnackBarBehavior.floating,
         backgroundColor: colorScheme.primaryContainer,
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(12),
+        shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.zero,
         ),
         margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
       ),

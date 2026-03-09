@@ -34,6 +34,7 @@ class _BackupState extends State<Backup> {
   @override
   Widget build(BuildContext context) {
     final sl = SimpleLocalizations.of(context);
+    final colorScheme = Theme.of(context).colorScheme;
 
     return PopScope(
       canPop: false,
@@ -43,33 +44,31 @@ class _BackupState extends State<Backup> {
       ),
       child: Scaffold(
           appBar: AppBar(
-            title: IconButton(
-                icon: const Icon(Icons.arrow_back_ios_sharp),
-                onPressed: () => NavigationHelper.replaceTo(
-                      context,
-                      NoteLanding.routeName,
-                    )),
+            leading: IconButton(
+              icon: const Icon(Icons.arrow_back),
+              onPressed: () => NavigationHelper.replaceTo(
+                context,
+                NoteLanding.routeName,
+              ),
+            ),
+            title: Text(sl?.getText('export_import') ?? 'Backup'),
             actions: [
               IconButton(
-                  tooltip: sl?.getText('exportToJSON'),
-                  icon: const Icon(Icons.file_upload_outlined),
-                  onPressed: () async {
-                    await _populateJsonExport();
-                  }),
+                tooltip: sl?.getText('exportToJSON'),
+                icon: const Icon(Icons.file_upload),
+                onPressed: () async {
+                  await _populateJsonExport();
+                }),
               IconButton(
-                  tooltip: sl?.getText('backupExportToFileTooltip') ?? 'Export to File',
-                  icon: const Icon(Icons.file_download),
-                  onPressed: _exportJsonToFile),
+                tooltip: sl?.getText('backupExportToFileTooltip') ?? 'Export to File',
+                icon: const Icon(Icons.file_download),
+                onPressed: _exportJsonToFile),
               IconButton(
-                  tooltip: _isJsonFormatted
-                      ? (sl?.getText('backupCompressJsonTooltip') ?? 'Compress JSON')
-                      : (sl?.getText('backupFormatJsonTooltip') ?? 'Format JSON'),
-                  icon: Icon(_isJsonFormatted ? Icons.compress : Icons.auto_fix_high),
-                  onPressed: _toggleJsonFormat),
-              IconButton(
-                  tooltip: sl?.getText('backupValidateJsonTooltip') ?? 'Validate JSON',
-                  icon: const Icon(Icons.rule_folder_outlined),
-                  onPressed: _validateJsonFromEditor),
+                tooltip: _isJsonFormatted
+                    ? (sl?.getText('backupCompressJsonTooltip') ?? 'Compress JSON')
+                    : (sl?.getText('backupFormatJsonTooltip') ?? 'Validate & Format JSON'),
+                icon: Icon(_isJsonFormatted ? Icons.compress : Icons.auto_fix_high),
+                onPressed: _validateAndFormatJson),
               IconButton(
                   tooltip: sl?.getText('importFromJSON'),
                   icon: const Icon(Icons.save_alt),
@@ -77,25 +76,26 @@ class _BackupState extends State<Backup> {
             ],
           ),
           body: Padding(
-            padding: const EdgeInsets.all(12),
+            padding: const EdgeInsets.all(8),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
                 if (_jsonStatus.isNotEmpty)
                   Padding(
-                    padding: const EdgeInsets.only(bottom: 8),
+                    padding: const EdgeInsets.only(bottom: 6),
                     child: Text(
                       _jsonStatus,
                       style: TextStyle(
                         color: _isJsonValid
-                            ? Theme.of(context).colorScheme.primary
-                            : Theme.of(context).colorScheme.error,
+                            ? colorScheme.primary
+                            : colorScheme.error,
+                        fontSize: 12,
                       ),
                     ),
                   ),
                 if (_lastExportedFilePath != null)
                   Padding(
-                    padding: const EdgeInsets.only(bottom: 8),
+                    padding: const EdgeInsets.only(bottom: 6),
                     child: InkWell(
                       onTap: () => _openFileLocation(_lastExportedFilePath!),
                       onLongPress: _copyExportPath,
@@ -103,8 +103,8 @@ class _BackupState extends State<Backup> {
                         children: [
                           Icon(
                             Icons.folder_open,
-                            size: 16,
-                            color: Theme.of(context).colorScheme.primary,
+                            size: 14,
+                            color: colorScheme.primary,
                           ),
                           const SizedBox(width: 4),
                           Expanded(
@@ -112,16 +112,16 @@ class _BackupState extends State<Backup> {
                               '${sl?.getText('backupLastExportedPrefix') ?? 'Last export: '}'
                               '${_getDisplayFileName()}',
                               style: TextStyle(
-                                color: Theme.of(context).colorScheme.primary,
+                                color: colorScheme.primary,
                                 decoration: TextDecoration.underline,
-                                fontSize: 12,
+                                fontSize: 11,
                               ),
                               overflow: TextOverflow.ellipsis,
                             ),
                           ),
                           IconButton(
                             tooltip: sl?.getText('backupCopyPathTooltip') ?? 'Copy path',
-                            icon: const Icon(Icons.copy, size: 16),
+                            icon: const Icon(Icons.copy, size: 14),
                             onPressed: _copyExportPath,
                             visualDensity: VisualDensity.compact,
                             padding: EdgeInsets.zero,
@@ -135,7 +135,7 @@ class _BackupState extends State<Backup> {
                   child: Scrollbar(
                     controller: _editorScrollCtlr,
                     thumbVisibility: true,
-                    child: TextFormField(
+                    child: TextField(
                       controller: _textCtlr,
                       scrollController: _editorScrollCtlr,
                       onChanged: _onEditorChanged,
@@ -144,9 +144,32 @@ class _BackupState extends State<Backup> {
                       maxLines: null,
                       expands: true,
                       textCapitalization: TextCapitalization.none,
-                      decoration: const InputDecoration(
-                        border: OutlineInputBorder(),
+                      style: TextStyle(
+                        fontFamily: 'monospace',
+                        fontSize: 13,
+                        color: colorScheme.onSurface,
+                      ),
+                      decoration: InputDecoration(
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.zero,
+                        ),
+                        enabledBorder: OutlineInputBorder(
+                          borderRadius: BorderRadius.zero,
+                          borderSide: BorderSide(
+                            color: colorScheme.outline,
+                          ),
+                        ),
+                        focusedBorder: OutlineInputBorder(
+                          borderRadius: BorderRadius.zero,
+                          borderSide: BorderSide(
+                            color: colorScheme.primary,
+                            width: 2,
+                          ),
+                        ),
                         alignLabelWithHint: true,
+                        filled: true,
+                        fillColor: colorScheme.surfaceContainerHighest,
+                        contentPadding: const EdgeInsets.all(12),
                       ),
                     ),
                   ),
@@ -179,7 +202,13 @@ class _BackupState extends State<Backup> {
     final notesInMap = notes.map((e) => e.toJsonMapThin()).toList();
     final formatted = const JsonEncoder.withIndent('  ').convert(notesInMap);
     _textCtlr.text = formatted;
-    _validateJson(text: formatted, showMessage: false);
+    // 直接设置为已验证和已格式化状态
+    setState(() {
+      _isJsonValid = true;
+      _isJsonFormatted = true;
+      _restoreDisabled = false;
+      _jsonStatus = '${_t('backupValidJsonStatusPrefix', 'Valid JSON. Items ready to import: ')}${notes.length}';
+    });
   }
 
   Future<String?> _pickExportDirectory() async {
@@ -332,7 +361,8 @@ class _BackupState extends State<Backup> {
     }
   }
 
-  void _toggleJsonFormat() {
+  /// 合并校验和格式化功能：先校验JSON，校验成功后再格式化
+  void _validateAndFormatJson() {
     final raw = _textCtlr.text.trim();
     if (raw.isEmpty) {
       _setValidationState(false, _t('backupEditorEmpty', 'Editor is empty.'));
@@ -340,17 +370,19 @@ class _BackupState extends State<Backup> {
     }
 
     try {
+      // 先校验JSON是否有效
       final decoded = const JsonDecoder().convert(raw);
+      final notes = _parseNotes(raw);
 
       if (_isJsonFormatted) {
-        // Compress: single line
+        // 压缩为单行
         final compressed = const JsonEncoder().convert(decoded);
         _textCtlr.text = compressed;
         setState(() {
           _isJsonFormatted = false;
         });
       } else {
-        // Format: pretty print
+        // 格式化为多行
         final formatted = const JsonEncoder.withIndent('  ').convert(decoded);
         _textCtlr.text = formatted;
         setState(() {
@@ -358,35 +390,30 @@ class _BackupState extends State<Backup> {
         });
       }
 
-      _validateJson(text: _textCtlr.text, showMessage: false);
-    } catch (e) {
-      _setValidationState(false, '${_t('backupInvalidJsonPrefix', 'Invalid JSON: ')}$e');
-    }
-  }
-
-  void _validateJsonFromEditor() {
-    _validateJson(text: _textCtlr.text, showMessage: true);
-  }
-
-  void _validateJson({required String text, required bool showMessage}) {
-    try {
-      final notes = _parseNotes(text);
+      // 校验成功，更新状态
       _setValidationState(
-          true,
-          '${_t('backupValidJsonStatusPrefix', 'Valid JSON. Items ready to import: ')}'
-          '${notes.length}');
-      if (showMessage && mounted) {
+        true,
+        '${_t('backupValidJsonStatusPrefix', 'Valid JSON. Items ready to import: ')}${notes.length}',
+      );
+
+      if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-              content: Text(
-                  '${_t('backupJsonValidSnackPrefix', 'JSON is valid. Items: ')}${notes.length}')),
+            content: Text(
+              '${_t('backupJsonValidSnackPrefix', 'JSON is valid and formatted. Items: ')}${notes.length}'
+            ),
+            backgroundColor: Theme.of(context).colorScheme.primaryContainer,
+          ),
         );
       }
     } catch (e) {
       _setValidationState(false, '${_t('backupInvalidNoteJsonPrefix', 'Invalid note JSON: ')}$e');
-      if (showMessage && mounted) {
+      if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('${_t('backupJsonInvalidPrefix', 'JSON is invalid: ')}$e')),
+          SnackBar(
+            content: Text('${_t('backupJsonInvalidPrefix', 'JSON is invalid: ')}$e'),
+            backgroundColor: Theme.of(context).colorScheme.errorContainer,
+          ),
         );
       }
     }
@@ -406,14 +433,17 @@ class _BackupState extends State<Backup> {
         barrierDismissible: false,
         builder: (context) {
           return AlertDialog(
-              title: Text(sl?.getText('messageLabel') ?? 'Message'),
-              content: Text((sl?.getText('successImportLabel') ?? 'success') +
-                  notes.length.toString()),
-              actions: <Widget>[
-                TextButton(
-                    child: Text(sl?.getText('noticed') ?? 'OK'),
-                    onPressed: () => Navigator.of(context).pop())
-              ]);
+            shape: const RoundedRectangleBorder(
+              borderRadius: BorderRadius.zero,
+            ),
+            title: Text(sl?.getText('messageLabel') ?? 'Message'),
+            content: Text((sl?.getText('successImportLabel') ?? 'success') +
+                notes.length.toString()),
+            actions: <Widget>[
+              TextButton(
+                child: Text(sl?.getText('noticed') ?? 'OK'),
+                onPressed: () => Navigator.of(context).pop())
+            ]);
         },
       );
     } catch (e) {

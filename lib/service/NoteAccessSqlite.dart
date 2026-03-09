@@ -26,17 +26,17 @@ class NoteAccessSqlite {
   final List<String> _initSQLs = [
     '''
       CREATE TABLE IF NOT EXISTS notes (
-            id INTEGER PRIMARY KEY, 
-            title TEXT, 
-            content TEXT, 
-            sequence REAL, 
-            isDone BIT NOT NULL, 
+            id INTEGER PRIMARY KEY,
+            title TEXT,
+            content TEXT,
+            sequence REAL,
+            isDone BIT NOT NULL,
             targetDate INT)
      ''',
     '''
       CREATE TABLE IF NOT EXISTS config (
-            id INTEGER PRIMARY KEY, 
-            name TEXT, 
+            id INTEGER PRIMARY KEY,
+            name TEXT,
             value TEXT
       )
     ''',
@@ -147,13 +147,14 @@ class NoteAccessSqlite {
           INSERT INTO notes
             (title, content, sequence, isDone, targetDate)
           VALUES
-            (
-              "${note.title}",
-              "${note.content}",
-              "${note.sequence}",
-              ${note.isDone ? 1 : 0}, 
-              ${note.targetDate?.millisecondsSinceEpoch}
-            )''');
+            (?, ?, ?, ?, ?)''',
+          [
+            note.title,
+            note.content,
+            note.sequence,
+            note.isDone ? 1 : 0,
+            note.targetDate?.millisecondsSinceEpoch,
+          ]);
     });
   }
 
