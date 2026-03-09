@@ -53,7 +53,7 @@ class _NumberPuzzlesState extends State<NumberPuzzles> {
     }
 
     return provider.guessItems.reversed.map((itm) {
-      // 解析结果，例如 "0A2B" 表示 0个位置正确，2个数字正确但位置错误
+      // Parse result, e.g., "0A2B" means 0 correct positions, 2 correct numbers but wrong positions
       final result = itm.result ?? '';
       final aCount = _extractCount(result, 'A');
       final bCount = _extractCount(result, 'B');
@@ -75,7 +75,7 @@ class _NumberPuzzlesState extends State<NumberPuzzles> {
         ),
         child: Row(
           children: [
-            // 猜测的数字
+            // Guessed number
             Expanded(
               flex: 2,
               child: Text(
@@ -88,17 +88,22 @@ class _NumberPuzzlesState extends State<NumberPuzzles> {
                 ),
               ),
             ),
-            // 结果显示 (A和B)
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
-              decoration: BoxDecoration(
-                color: _getResultColor(provider, itm, context),
-                borderRadius: BorderRadius.zero,
-              ),
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  if (aCount > 0)
+            // Result display (A and B) - tap to show explanation
+            InkWell(
+              onTap: () {
+                // Show result explanation dialog
+                _showResultDialog(context, aCount, bCount, sl);
+              },
+              borderRadius: BorderRadius.zero,
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+                decoration: BoxDecoration(
+                  color: _getResultColor(provider, itm, context),
+                  borderRadius: BorderRadius.zero,
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
                     Text(
                       '${aCount}A',
                       style: TextStyle(
@@ -107,8 +112,7 @@ class _NumberPuzzlesState extends State<NumberPuzzles> {
                         color: Theme.of(context).colorScheme.onPrimaryContainer,
                       ),
                     ),
-                  if (aCount > 0 && bCount > 0) const SizedBox(width: 8),
-                  if (bCount > 0)
+                    const SizedBox(width: 4),
                     Text(
                       '${bCount}B',
                       style: TextStyle(
@@ -117,29 +121,22 @@ class _NumberPuzzlesState extends State<NumberPuzzles> {
                         color: Theme.of(context).colorScheme.onPrimaryContainer,
                       ),
                     ),
-                  if (aCount == 0 && bCount == 0)
-                    Text(
-                      '0A0B',
-                      style: TextStyle(
-                        fontSize: 14,
-                        fontWeight: FontWeight.w500,
-                        color: Theme.of(context).colorScheme.onPrimaryContainer,
-                      ),
-                    ),
-                ],
+                  ],
+                ),
               ),
             ),
             const SizedBox(width: 12),
-            // 描述信息
+            // Timestamp info (simplified single line display)
             Expanded(
-              flex: 3,
+              flex: 2,
               child: Text(
                 _buildDescription(provider, sl, itm),
                 style: TextStyle(
                   fontSize: 11,
                   color: Theme.of(context).colorScheme.onSurfaceVariant,
+                  fontWeight: FontWeight.w500,
                 ),
-                maxLines: 2,
+                maxLines: 1,
                 overflow: TextOverflow.ellipsis,
               ),
             ),
@@ -147,6 +144,82 @@ class _NumberPuzzlesState extends State<NumberPuzzles> {
         ),
       );
     }).toList();
+  }
+
+  /// Show result explanation dialog
+  void _showResultDialog(BuildContext context, int aCount, int bCount, SimpleLocalizations? sl) {
+    // Convert number to key suffix
+    String _numberToKey(int n) {
+      switch (n) {
+        case 0: return 'Zero';
+        case 1: return 'One';
+        case 2: return 'Two';
+        case 3: return 'Three';
+        case 4: return 'Four';
+        case 5: return 'Five';
+        case 6: return 'Six';
+        case 7: return 'Seven';
+        case 8: return 'Eight';
+        case 9: return 'Nine';
+        case 10: return 'Ten';
+        default: return '';
+      }
+    }
+
+    // Get localized number text
+    String _getNumberText(int count) {
+      if (count > 10) return count.toString();
+      final key = 'guessResult${_numberToKey(count)}';
+      return sl?.getText(key) ?? count.toString();
+    }
+
+    String aText = _getNumberText(aCount);
+    String bText = _getNumberText(bCount);
+
+    String explanation = '''
+$aText ${sl?.getText('resultCorrectPosition') ?? 'numbers correct in both position and value'} ($aCount A)
+$bText ${sl?.getText('resultCorrectValue') ?? 'numbers correct but in wrong position'} ($bCount B)
+''';
+
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.zero,
+        ),
+        title: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(
+              Icons.info_outline,
+              color: Theme.of(context).colorScheme.primary,
+              size: 20,
+            ),
+            const SizedBox(width: 8),
+            Text(
+              sl?.getText('resultDialogTitle') ?? 'Result Explanation',
+              style: TextStyle(
+                fontSize: 16,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+          ],
+        ),
+        content: Text(
+          explanation,
+          style: TextStyle(
+            fontSize: 14,
+            height: 1.5,
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: Text(sl?.getText('okButton') ?? 'OK'),
+          ),
+        ],
+      ),
+    );
   }
 
   int _extractCount(String result, String char) {
@@ -174,18 +247,18 @@ class _NumberPuzzlesState extends State<NumberPuzzles> {
   }
 
   void _reset() {
-    _ctlrs.forEach((ctr) => ctr.text = '');
+    _ctlrs.forEach((controller) => controller.text = '');
     _focusNodes[0].requestFocus();
   }
 
   bool _validateInput() {
-    return _ctlrs.indexWhere((ctl) => ctl.text.isEmpty) == -1;
+    return _ctlrs.indexWhere((controller) => controller.text.isEmpty) == -1;
   }
 
   void _onChange(int c, String v) {
-    _ctlrs.forEach((ctl) {
-      if (ctl.text == v) {
-        ctl.text = '';
+    _ctlrs.forEach((controller) {
+      if (controller.text == v) {
+        controller.text = '';
       }
     });
     _ctlrs[c].text = v;
@@ -222,11 +295,21 @@ class _NumberPuzzlesState extends State<NumberPuzzles> {
             fontWeight: FontWeight.w800));
   }
 
+  /// Simplified timestamp display, single line
   String _buildDescription(GuessitemChangeNotifier provider,
-          SimpleLocalizations? sl, GuessItem itm) =>
-      itm.step == 1
-          ? '${sl?.getText('start') ?? 'Start'} <${itm.tryTime?.toString().substring(0, 19)}>'
-          : '${sl?.getText('take') ?? 'Take'} ${itm.step} ${sl?.getText('step') ?? 'steps'} ${sl?.getText('in') ?? 'in'} ${itm.duration?.inSeconds.toString()}${sl?.getText('second') ?? 's'} <${itm.tryTime?.toString().substring(11, 19)}>';
+          SimpleLocalizations? sl, GuessItem itm) {
+    // Extract time HH:mm:ss
+    final timeStr = itm.tryTime?.toString().substring(11, 19) ?? '';
+
+    if (itm.step == 1) {
+      // First guess: only show time
+      return timeStr;
+    } else {
+      // Subsequent guesses: show count·duration·time
+      final seconds = itm.duration?.inSeconds ?? 0;
+      return '#${itm.step}·${seconds}s·$timeStr';
+    }
+  }
 
   Widget _buildNumberInput(ThemeData theme, TextEditingController ctr,
       FocusNode fn, ValueChanged<String> handler) {
@@ -295,14 +378,14 @@ class _NumberPuzzlesState extends State<NumberPuzzles> {
       body: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          // 游戏标题
+          // Game title
           Center(
             child: Padding(
               padding: const EdgeInsets.fromLTRB(16, 24, 16, 16),
               child: _buildGameTitle(sl, theme, guessitemProvider),
             ),
           ),
-          // 数字输入和猜测按钮
+          // Number input and guess button
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
             color: colorScheme.surfaceContainerLow,
@@ -349,7 +432,7 @@ class _NumberPuzzlesState extends State<NumberPuzzles> {
               ],
             ),
           ),
-          // 猜测历史列表
+          // Guess history list
           Expanded(
             flex: 2,
             child: ListView(
@@ -363,8 +446,8 @@ class _NumberPuzzlesState extends State<NumberPuzzles> {
 
   @override
   void dispose() {
-    for (TextEditingController ctlr in _ctlrs) {
-      ctlr.dispose();
+    for (TextEditingController controller in _ctlrs) {
+      controller.dispose();
     }
     for (FocusNode fn in _focusNodes) {
       fn.dispose();

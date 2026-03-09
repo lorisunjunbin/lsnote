@@ -14,7 +14,6 @@ import 'screen/NoteLanding.dart';
 import 'screen/Login.dart';
 import 'screen/Backup.dart';
 
-/// Material 3 主题配置
 class AppTheme {
   static ThemeData getLightTheme(Color primaryColor) {
     final colorScheme = ColorScheme.fromSeed(
@@ -240,7 +239,6 @@ class NoteApp extends StatelessWidget {
       Config cfgPrimarySwatch = await db.getConfig(Config.primarySwatch);
       final primaryColor = Colors.primaries[int.parse(cfgPrimarySwatch.value!)];
 
-      // 使用 Material 3 主题
       tcn.setTheme(AppTheme.getLightTheme(primaryColor));
 
       Config cfgHiddenDone = await db.getConfig(Config.hiddenDone);

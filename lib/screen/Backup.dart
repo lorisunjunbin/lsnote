@@ -3,8 +3,6 @@ import 'package:flutter/services.dart';
 import 'dart:convert';
 import 'dart:io';
 import 'package:file_picker/file_picker.dart';
-import 'package:path/path.dart' as p;
-import 'package:url_launcher/url_launcher.dart';
 
 import '../i18n/SimpleLocalizations.dart';
 import '../model/Note.dart';
@@ -97,7 +95,6 @@ class _BackupState extends State<Backup> {
                   Padding(
                     padding: const EdgeInsets.only(bottom: 6),
                     child: InkWell(
-                      onTap: () => _openFileLocation(_lastExportedFilePath!),
                       onLongPress: _copyExportPath,
                       child: Row(
                         children: [
@@ -113,7 +110,6 @@ class _BackupState extends State<Backup> {
                               '${_getDisplayFileName()}',
                               style: TextStyle(
                                 color: colorScheme.primary,
-                                decoration: TextDecoration.underline,
                                 fontSize: 11,
                               ),
                               overflow: TextOverflow.ellipsis,
@@ -184,8 +180,7 @@ class _BackupState extends State<Backup> {
     final path = _lastExportedDisplayPath ?? _lastExportedFilePath ?? '';
     if (path.isEmpty) return '';
 
-    // Extract filename from path
-    return p.basename(path);
+    return path.split('/').last;
   }
 
   void _onEditorChanged(String val) {
@@ -202,7 +197,6 @@ class _BackupState extends State<Backup> {
     final notesInMap = notes.map((e) => e.toJsonMapThin()).toList();
     final formatted = const JsonEncoder.withIndent('  ').convert(notesInMap);
     _textCtlr.text = formatted;
-    // 直接设置为已验证和已格式化状态
     setState(() {
       _isJsonValid = true;
       _isJsonFormatted = true;
@@ -265,7 +259,7 @@ class _BackupState extends State<Backup> {
           .split('.')
           .first;
       final fileName = 'lsnote_backup_$timestamp.json';
-      final filePath = p.join(directory.path, fileName);
+      final filePath = '${directory.path}/$fileName';
       final file = File(filePath);
 
       try {
@@ -276,7 +270,6 @@ class _BackupState extends State<Backup> {
         savedPath = file.path;
         displayPath = file.path;
       } on FileSystemException {
-        // Selected folder is not writable (common on Android scoped storage).
         final fallbackPath = await _saveWithSystemDialog(jsonContent);
         if (fallbackPath == null || fallbackPath.trim().isEmpty) {
           if (!mounted) return;
@@ -292,9 +285,8 @@ class _BackupState extends State<Backup> {
         }
         savedPath = fallbackPath;
 
-        // Prefer a readable final location for UI if picker returned a content URI.
         if (fallbackPath.startsWith('content://') || fallbackPath.startsWith('file://')) {
-          displayPath = p.join(selectedDirectory, fileName);
+          displayPath = '$selectedDirectory/$fileName';
         } else {
           displayPath = fallbackPath;
         }
@@ -308,7 +300,7 @@ class _BackupState extends State<Backup> {
 
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('${_t('backupExportedPrefix', 'Exported: ')}${p.basename(displayPath)}'),
+          content: Text('${_t('backupExportedPrefix', 'Exported: ')}${displayPath.split('/').last}'),
           duration: const Duration(seconds: 3),
         ),
       );
@@ -320,48 +312,7 @@ class _BackupState extends State<Backup> {
     }
   }
 
-  Future<void> _openFileLocation(String filePath) async {
-    try {
-      if (filePath.startsWith('content://') || filePath.startsWith('file://')) {
-        final uri = Uri.parse(filePath);
-        final opened = await launchUrl(uri, mode: LaunchMode.externalApplication);
-        if (!opened && mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('${_t('backupCannotOpenPrefix', 'Cannot open: ')}$filePath')),
-          );
-        }
-        return;
-      }
-
-      final file = File(filePath);
-      if (!await file.exists()) {
-        if (!mounted) return;
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(_t('backupFileNotFound', 'File not found'))),
-        );
-        return;
-      }
-
-      final directory = file.parent;
-      final uri = Uri.file(directory.path);
-
-      if (await canLaunchUrl(uri)) {
-        await launchUrl(uri);
-      } else {
-        if (!mounted) return;
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('${_t('backupCannotOpenPrefix', 'Cannot open: ')}${directory.path}')),
-        );
-      }
-    } catch (e) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('${_t('backupOpenLocationFailedPrefix', 'Failed to open location: ')}$e')),
-      );
-    }
-  }
-
-  /// 合并校验和格式化功能：先校验JSON，校验成功后再格式化
+  /// Validate and format JSON: validate first, then format if valid
   void _validateAndFormatJson() {
     final raw = _textCtlr.text.trim();
     if (raw.isEmpty) {
@@ -370,19 +321,16 @@ class _BackupState extends State<Backup> {
     }
 
     try {
-      // 先校验JSON是否有效
       final decoded = const JsonDecoder().convert(raw);
       final notes = _parseNotes(raw);
 
       if (_isJsonFormatted) {
-        // 压缩为单行
         final compressed = const JsonEncoder().convert(decoded);
         _textCtlr.text = compressed;
         setState(() {
           _isJsonFormatted = false;
         });
       } else {
-        // 格式化为多行
         final formatted = const JsonEncoder.withIndent('  ').convert(decoded);
         _textCtlr.text = formatted;
         setState(() {
@@ -390,7 +338,6 @@ class _BackupState extends State<Backup> {
         });
       }
 
-      // 校验成功，更新状态
       _setValidationState(
         true,
         '${_t('backupValidJsonStatusPrefix', 'Valid JSON. Items ready to import: ')}${notes.length}',

@@ -29,7 +29,6 @@ class _NoteItemState extends State<NoteItem>
     _titleCtl = TextEditingController();
     _contentCtl = TextEditingController();
 
-    // 页面进入动画
     _animationController = AnimationController(
       duration: const Duration(milliseconds: 400),
       vsync: this,
@@ -105,7 +104,6 @@ class _NoteItemState extends State<NoteItem>
     );
   }
 
-  /// Material 3 AppBar
   PreferredSizeWidget _buildAppBar(
       BuildContext context, SimpleLocalizations sl, ColorScheme colorScheme) {
     return AppBar(
@@ -127,7 +125,6 @@ class _NoteItemState extends State<NoteItem>
     );
   }
 
-  /// 区块标题
   Widget _buildSectionTitle(SimpleLocalizations sl, String key, String fallback) {
     final colorScheme = Theme.of(context).colorScheme;
     return Text(
@@ -141,7 +138,6 @@ class _NoteItemState extends State<NoteItem>
     );
   }
 
-  /// Material 3 日期选择器卡片
   Widget _buildDatepickerCard(ColorScheme colorScheme, SimpleLocalizations sl) {
     return Material(
       color: colorScheme.surfaceContainerLow,
@@ -202,7 +198,6 @@ class _NoteItemState extends State<NoteItem>
     );
   }
 
-  /// 显示日期选择器
   void _showDatePicker(SimpleLocalizations sl, ColorScheme colorScheme) {
     showDatePicker(
       context: context,
@@ -234,7 +229,6 @@ class _NoteItemState extends State<NoteItem>
     });
   }
 
-  /// 格式化日期显示
   String _formatDate(DateTime date) {
     final months = [
       'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
@@ -243,7 +237,6 @@ class _NoteItemState extends State<NoteItem>
     return '${months[date.month - 1]} ${date.day}, ${date.year}';
   }
 
-  /// Material 3 标题输入框
   Widget _buildNoteTitleTextField(ColorScheme colorScheme, SimpleLocalizations sl) {
     return TextField(
       controller: _titleCtl,
@@ -292,7 +285,6 @@ class _NoteItemState extends State<NoteItem>
     );
   }
 
-  /// Material 3 内容输入框
   Widget _buildNoteDetailTextField(ColorScheme colorScheme, SimpleLocalizations sl) {
     return TextField(
       controller: _contentCtl,
@@ -336,7 +328,6 @@ class _NoteItemState extends State<NoteItem>
     );
   }
 
-  /// Material 3 保存按钮
   Widget _buildSaveButton(ColorScheme colorScheme, SimpleLocalizations sl) {
     return SizedBox(
       width: double.infinity,
@@ -364,7 +355,6 @@ class _NoteItemState extends State<NoteItem>
     );
   }
 
-  /// 处理保存操作
   void _handleSave(SimpleLocalizations sl, ColorScheme colorScheme) async {
     if (_titleCtl.value.text.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -393,7 +383,6 @@ class _NoteItemState extends State<NoteItem>
       return;
     }
 
-    // 添加保存反馈动画
     final messenger = ScaffoldMessenger.of(context);
     messenger.showSnackBar(
       SnackBar(
@@ -424,7 +413,6 @@ class _NoteItemState extends State<NoteItem>
       ),
     );
 
-    // 保存笔记
     int total = await db.getNoteCount();
     await db.addNote(Note(
       title: _titleCtl.value.text,
@@ -434,7 +422,6 @@ class _NoteItemState extends State<NoteItem>
       targetDate: _datetime,
     ));
 
-    // 延迟一下让用户看到保存成功反馈
     await Future.delayed(const Duration(milliseconds: 300));
     NavigationHelper.replaceTo(context, NoteLanding.routeName);
 

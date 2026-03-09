@@ -2,7 +2,6 @@ import 'dart:io';
 
 import 'package:async/async.dart';
 
-import 'package:path/path.dart';
 import 'package:sqflite/sqflite.dart';
 
 import '../model/Note.dart';
@@ -64,7 +63,7 @@ class NoteAccessSqlite {
         if (!await Directory(dbFolder).exists()) {
           await Directory(dbFolder).create(recursive: true);
         }
-        _dbPath = join(dbFolder, _dbFileName);
+        _dbPath = '$dbFolder/$_dbFileName';
         ////print(_dbPath);
 
         _database = await openDatabase(_dbPath!, version: 1,
