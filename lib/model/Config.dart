@@ -2,6 +2,8 @@ class Config {
 
   static final String primarySwatch = "primarySwatch";
   static final String hiddenDone = "hiddenDone";
+  static final String aiHost = "aiHost";
+  static final String aiPort = "aiPort";
 
   final int? id;
   final String? name;
