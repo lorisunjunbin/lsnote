@@ -9,6 +9,7 @@ import 'changenotifier/SwitcherChangeNotifier.dart';
 import 'changenotifier/ThemeChangeNotifier.dart';
 import 'service/NoteAccessSqlite.dart';
 import 'model/Config.dart';
+import 'service/AiService.dart';
 import 'screen/NoteItem.dart';
 import 'screen/NoteLanding.dart';
 import 'screen/Login.dart';
@@ -274,6 +275,10 @@ class NoteApp extends StatelessWidget {
 
       Config cfgHiddenDone = await db.getConfig(Config.hiddenDone);
       scn.setHiddenDone(cfgHiddenDone.value == '1' ? true : false);
+
+      await db.ensureConfig(Config.aiHost, '127.0.0.1');
+      await db.ensureConfig(Config.aiPort, '8888');
+      await AiService.instance.loadConfig();
     });
     return true;
   }

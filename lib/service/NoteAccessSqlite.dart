@@ -50,6 +50,18 @@ class NoteAccessSqlite {
             (name, value)
           VALUES
             ('hiddenDone','1');
+    ''',
+    '''
+      INSERT INTO config
+            (name, value)
+          VALUES
+            ('aiHost','127.0.0.1');
+    ''',
+    '''
+      INSERT INTO config
+            (name, value)
+          VALUES
+            ('aiPort','8888');
     '''
   ];
 
@@ -94,6 +106,17 @@ class NoteAccessSqlite {
       WHERE name = ?''',
       [value, name],
     );
+  }
+
+  Future<void> ensureConfig(String name, String defaultValue) async {
+    final results = await _database!
+        .rawQuery('SELECT * FROM config WHERE name=?', [name]);
+    if (results.isEmpty) {
+      await _database!.rawInsert(
+        'INSERT INTO config (name, value) VALUES (?, ?)',
+        [name, defaultValue],
+      );
+    }
   }
 
   Future<List<Note>> getNotes(Map<String, dynamic> params) async {
