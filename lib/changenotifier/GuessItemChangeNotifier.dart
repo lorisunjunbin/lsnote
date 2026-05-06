@@ -21,7 +21,7 @@ class GuessitemChangeNotifier with ChangeNotifier {
   }
 
   Future<void> addGuessItem(String tryAnswer) async {
-    if (_correctAnswer == null || _correctAnswer.isEmpty) {
+    if (_correctAnswer.isEmpty) {
       _generateAnswer(tryAnswer);
     }
     if (_isDifferentWithLast(tryAnswer)) {
