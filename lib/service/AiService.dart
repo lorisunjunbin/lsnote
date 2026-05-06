@@ -13,10 +13,12 @@ class AiService {
 
   String _host = '127.0.0.1';
   int _port = 8888;
+  final String _basePath = '/v1';
 
   String get host => _host;
   int get port => _port;
-  String get baseUrl => 'http://$_host:$_port';
+  String get basePath => _basePath;
+  String get baseUrl => 'http://$_host:$_port$_basePath';
 
   Future<void> loadConfig() async {
     try {
@@ -43,7 +45,7 @@ class AiService {
   Future<bool> checkHealth() async {
     try {
       final response = await http
-          .get(Uri.parse('$baseUrl/health'))
+          .get(Uri.parse('$baseUrl/models'))
           .timeout(const Duration(seconds: 5));
       return response.statusCode == 200;
     } catch (_) {
@@ -54,7 +56,7 @@ class AiService {
   Future<String> complete(List<Map<String, String>> messages) async {
     final response = await http
         .post(
-          Uri.parse('$baseUrl/v1/chat/completions'),
+          Uri.parse('$baseUrl/chat/completions'),
           headers: {'Content-Type': 'application/json'},
           body: jsonEncode({
             'messages': messages,
@@ -77,7 +79,7 @@ class AiService {
 
     try {
       final request =
-          await client.postUrl(Uri.parse('$baseUrl/v1/chat/completions'));
+          await client.postUrl(Uri.parse('$baseUrl/chat/completions'));
       request.headers.set('Content-Type', 'application/json');
       request.write(jsonEncode({
         'messages': messages,
