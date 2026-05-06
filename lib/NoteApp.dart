@@ -13,6 +13,7 @@ import 'screen/NoteItem.dart';
 import 'screen/NoteLanding.dart';
 import 'screen/Login.dart';
 import 'screen/Backup.dart';
+import 'screen/AiChat.dart';
 
 class AppTheme {
   // Keep only 16 colors in picker/theme index mapping; exclude brown/blueGrey.
@@ -317,7 +318,8 @@ class NoteApp extends StatelessWidget {
                       title: SimpleLocalizations.of(context)?.getText('title')),
                   NoteItem.routeName: (context) => NoteItem(),
                   Backup.routeName: (context) => Backup(),
-                  NumberPuzzles.routeName: (context) => NumberPuzzles()
+                  NumberPuzzles.routeName: (context) => NumberPuzzles(),
+                  AiChat.routeName: (context) => AiChat(),
                 }),
           );
         });
