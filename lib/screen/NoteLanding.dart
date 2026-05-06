@@ -13,6 +13,8 @@ import '../model/Note.dart';
 import 'Backup.dart';
 import 'NoteItem.dart';
 import '../NoteApp.dart';
+import '../service/AiService.dart';
+import 'AiChat.dart';
 
 class NoteLanding extends StatefulWidget {
   NoteLanding({Key? key, this.title}) : super(key: key);
@@ -352,6 +354,9 @@ class _NoteLandingState extends State<NoteLanding> {
                 case 2:
                   Navigator.of(context).pushReplacementNamed(NumberPuzzles.routeName);
                   break;
+                case 3:
+                  Navigator.of(context).pushReplacementNamed(AiChat.routeName);
+                  break;
               }
             },
             items: [
@@ -366,6 +371,10 @@ class _NoteLandingState extends State<NoteLanding> {
               BottomNavigationBarItem(
                 icon: const Icon(Icons.gamepad_rounded),
                 label: sl.getText('numberpuzzles') ?? 'Game',
+              ),
+              BottomNavigationBarItem(
+                icon: const Icon(Icons.auto_awesome),
+                label: sl.getText('aiChat') ?? 'AI',
               ),
             ],
           );
@@ -528,6 +537,186 @@ class _NoteLandingState extends State<NoteLanding> {
             },
           );
         });
+  }
+
+  Future<void> _showAiAssistSheet(
+      Note item, SimpleLocalizations sl, ColorScheme colorScheme) async {
+    final content = _ctrls['${item.id}cblt']?.value.text ?? item.content ?? '';
+    if (content.isEmpty) return;
+
+    String? aiResult;
+    bool isLoading = false;
+
+    await showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (sheetContext) {
+        return StatefulBuilder(
+          builder: (ctx, setSheetState) {
+            Future<void> runAction(String systemPrompt) async {
+              setSheetState(() {
+                isLoading = true;
+                aiResult = '';
+              });
+
+              try {
+                final messages = [
+                  {'role': 'system', 'content': systemPrompt},
+                  {'role': 'user', 'content': content},
+                ];
+
+                await for (final token
+                    in AiService.instance.completeStream(messages)) {
+                  setSheetState(() {
+                    aiResult = (aiResult ?? '') + token;
+                  });
+                }
+              } catch (e) {
+                setSheetState(() {
+                  aiResult = 'Error: $e';
+                });
+              } finally {
+                setSheetState(() => isLoading = false);
+              }
+            }
+
+            return DraggableScrollableSheet(
+              initialChildSize: 0.6,
+              minChildSize: 0.3,
+              maxChildSize: 0.9,
+              expand: false,
+              builder: (ctx, scrollCtl) => Padding(
+                padding: const EdgeInsets.all(16),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Center(
+                      child: Container(
+                        width: 40,
+                        height: 4,
+                        decoration: BoxDecoration(
+                          color: colorScheme.onSurfaceVariant.withValues(alpha: 0.4),
+                          borderRadius: BorderRadius.circular(2),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                    Text(
+                      sl.getText('aiAssist') ?? 'AI Assist',
+                      style: TextStyle(
+                        fontSize: 18,
+                        fontWeight: FontWeight.w600,
+                        color: colorScheme.onSurface,
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    Wrap(
+                      spacing: 8,
+                      runSpacing: 8,
+                      children: [
+                        _aiActionChip(
+                          sl.getText('aiSummarize') ?? 'Summarize',
+                          Icons.summarize,
+                          colorScheme,
+                          isLoading,
+                          () => runAction(
+                              'Summarize the following text into concise bullet points.'),
+                        ),
+                        _aiActionChip(
+                          sl.getText('aiPolish') ?? 'Polish',
+                          Icons.auto_fix_high,
+                          colorScheme,
+                          isLoading,
+                          () => runAction(
+                              'Improve the grammar and clarity of the following text. Keep the original meaning.'),
+                        ),
+                        _aiActionChip(
+                          sl.getText('aiTranslate') ?? 'Translate',
+                          Icons.translate,
+                          colorScheme,
+                          isLoading,
+                          () => runAction(
+                              'Translate the following text. If Chinese, translate to English; if English, translate to Chinese.'),
+                        ),
+                        _aiActionChip(
+                          sl.getText('aiContinue') ?? 'Continue',
+                          Icons.edit_note,
+                          colorScheme,
+                          isLoading,
+                          () => runAction(
+                              'Continue writing based on the following text. Match the style and topic.'),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 16),
+                    Expanded(
+                      child: SingleChildScrollView(
+                        controller: scrollCtl,
+                        child: isLoading && (aiResult == null || aiResult!.isEmpty)
+                            ? Center(
+                                child: Padding(
+                                  padding: const EdgeInsets.all(32),
+                                  child: CircularProgressIndicator(
+                                    color: colorScheme.primary,
+                                  ),
+                                ),
+                              )
+                            : SelectableText(
+                                aiResult ?? '',
+                                style: TextStyle(
+                                  fontSize: 14,
+                                  height: 1.5,
+                                  color: colorScheme.onSurface,
+                                ),
+                              ),
+                      ),
+                    ),
+                    if (aiResult != null && aiResult!.isNotEmpty && !isLoading)
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.end,
+                        children: [
+                          TextButton.icon(
+                            icon: const Icon(Icons.find_replace, size: 18),
+                            label: Text(sl.getText('aiReplace') ?? 'Replace'),
+                            onPressed: () {
+                              _ctrls['${item.id}cblt']?.text = aiResult!;
+                              Navigator.of(ctx).pop();
+                            },
+                          ),
+                          const SizedBox(width: 8),
+                          TextButton.icon(
+                            icon: const Icon(Icons.add, size: 18),
+                            label: Text(sl.getText('aiAppend') ?? 'Append'),
+                            onPressed: () {
+                              final current =
+                                  _ctrls['${item.id}cblt']?.text ?? '';
+                              _ctrls['${item.id}cblt']?.text =
+                                  '$current\n\n$aiResult';
+                              Navigator.of(ctx).pop();
+                            },
+                          ),
+                        ],
+                      ),
+                  ],
+                ),
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
+
+  Widget _aiActionChip(String label, IconData icon, ColorScheme colorScheme,
+      bool disabled, VoidCallback onTap) {
+    return ActionChip(
+      avatar: Icon(icon, size: 18),
+      label: Text(label),
+      onPressed: disabled ? null : onTap,
+    );
   }
 
   List<Widget> _buildItemList(ThemeData theme) {
@@ -726,6 +915,15 @@ class _NoteLandingState extends State<NoteLanding> {
                               padding: EdgeInsets.zero,
                               constraints: BoxConstraints(minWidth: 32, minHeight: 28),
                               onPressed: () => _handleCardDelete(item, sl),
+                            ),
+                            const SizedBox(width: 8),
+                            IconButton(
+                              icon: Icon(Icons.auto_awesome, size: 20),
+                              color: colorScheme.primary,
+                              tooltip: sl.getText('aiAssist') ?? 'AI Assist',
+                              padding: EdgeInsets.zero,
+                              constraints: BoxConstraints(minWidth: 32, minHeight: 28),
+                              onPressed: () => _showAiAssistSheet(item, sl, colorScheme),
                             ),
                           ],
                         ),
