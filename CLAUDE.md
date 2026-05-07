@@ -1,0 +1,179 @@
+# CLAUDE.md
+
+**Tradeoff:** These guidelines bias toward caution over speed. For trivial tasks, use judgment.
+
+## 1. Think Before Coding
+
+**Don't assume. Don't hide confusion. Surface tradeoffs.**
+
+Before implementing:
+- State your assumptions explicitly. If uncertain, ask.
+- If multiple interpretations exist, present them - don't pick silently.
+- If a simpler approach exists, say so. Push back when warranted.
+- If something is unclear, stop. Name what's confusing. Ask.
+
+## 2. Simplicity First
+
+**Minimum code that solves the problem. Nothing speculative.**
+
+- No features beyond what was asked.
+- No abstractions for single-use code.
+- No "flexibility" or "configurability" that wasn't requested.
+- No error handling for impossible scenarios.
+- If you write 200 lines and it could be 50, rewrite it.
+
+Ask yourself: "Would a senior engineer say this is overcomplicated?" If yes, simplify.
+
+## 3. Surgical Changes
+
+**Touch only what you must. Clean up only your own mess.**
+
+When editing existing code:
+- Don't "improve" adjacent code, comments, or formatting.
+- Don't refactor things that aren't broken.
+- Match existing style, even if you'd do it differently.
+- If you notice unrelated dead code, mention it - don't delete it.
+
+When your changes create orphans:
+- Remove imports/variables/functions that YOUR changes made unused.
+- Don't remove pre-existing dead code unless asked.
+
+The test: Every changed line should trace directly to the user's request.
+
+## 4. Goal-Driven Execution
+
+**Define success criteria. Loop until verified.**
+
+Transform tasks into verifiable goals:
+- "Add validation" → "Write tests for invalid inputs, then make them pass"
+- "Fix the bug" → "Write a test that reproduces it, then make it pass"
+- "Refactor X" → "Ensure tests pass before and after"
+
+For multi-step tasks, state a brief plan:
+```
+1. [Step] → verify: [check]
+2. [Step] → verify: [check]
+3. [Step] → verify: [check]
+```
+
+Strong success criteria let you loop independently. Weak criteria ("make it work") require constant clarification.
+
+---
+
+**These guidelines are working if:** fewer unnecessary changes in diffs, fewer rewrites due to overcomplication, and clarifying questions come before implementation rather than after mistakes.
+
+
+## Project Overview
+
+**lsnote** (Local Simple NOTE) is a Flutter mobile/desktop note-taking app (v1.2.0+3). It supports Android, iOS, macOS, and Windows. Features include SQLite-backed notes, drag-drop reordering, fingerprint auth, JSON backup/restore, theme customization, and a number puzzle mini-game.
+
+## Commands
+
+```bash
+# Dependencies
+flutter pub get
+flutter clean && flutter pub get
+
+# Run
+flutter run
+
+# Build
+flutter build apk --debug --target-platform android-arm64
+flutter build apk --release
+
+# Test
+flutter test
+flutter test test/widget_test.dart
+
+# Analyze
+flutter analyze
+flutter analyze lib/some_file.dart
+
+# Check outdated packages
+flutter pub outdated
+```
+
+## Architecture
+
+The app uses **Provider + ChangeNotifier** for state management and **sqflite** for local persistence.
+
+### Entry & Routing
+
+`main.dart` bootstraps three global `ChangeNotifier`s via `MultiProvider` and mounts `NoteApp`. `NoteApp.dart` defines named routes and initializes the DB singleton.
+
+Route flow: `Login` → `NoteLanding` → `NoteItem` / `Backup` / `NumberPuzzles` / `AiChat`
+
+### Layer Structure
+
+| Layer | Location | Role |
+|---|---|---|
+| Screens | `lib/screen/` | UI — 5 screens, each a named route |
+| State | `lib/changenotifier/` | 3 ChangeNotifiers (theme, hide-done toggle, game state) |
+| Service | `lib/service/NoteAccessSqlite.dart` | Singleton SQLite DAO; all DB access goes here |
+| Models | `lib/model/` | Plain Dart classes: `Note`, `Config`, `GuessItem`, `ChatMessage` (has optional `imagePath` for multimodal) |
+| i18n | `lib/i18n/SimpleLocalizations.dart` | Hardcoded en/zh strings (~100+ keys) |
+| Utils | `lib/utils/NavigationHelper.dart` | Shared navigation helpers |
+
+### State Management Details
+
+- **ThemeChangeNotifier** — active color scheme (16 Material primaries); persisted to `config` table
+- **SwitcherChangeNotifier** — boolean toggle for hiding completed notes; persisted to `config` table
+- **GuessitemChangeNotifier** — in-memory state for the 1A2B number puzzle game
+
+Screens read state with `Provider.of<T>(context)` and write via notifier methods.
+
+### Database Schema
+
+`NoteAccessSqlite` is a singleton (`NoteAccessSqlite.db`). Two tables:
+
+- `notes` — `id`, `title`, `content`, `sequence` (REAL, used for drag-drop order), `isDone` (BIT), `targetDate` (INT epoch ms)
+- `config` — `id`, `name`, `value` (key-value store for theme index and hide-done setting)
+
+### i18n
+
+`SimpleLocalizations` contains all UI strings. Add new keys to both `_en` and `_zh` maps in `lib/i18n/SimpleLocalizations.dart`.
+
+### Theme System
+
+Material Design 3 with `ColorScheme`. The user picks one of 16 colors (`Colors.primaries` minus brown/blueGrey); light and dark variants are generated automatically. Theme is applied at the `NoteApp` level.
+
+### On-Device AI (LiteRT-LM)
+
+`lib/service/AiService.dart` — Singleton managing LiteRT-LM engine lifecycle. Uses `flutter_litert_lm` package with Gemma-4-E4B-it model (`.litertlm` format, ~3.6GB, user-provided file).
+
+- State machine: `uninitialized → loading → ready / error`
+- Two usage patterns: `completeStream(systemPrompt, userMessage)` for one-shot (NoteLanding assist), `createChatConversation()` for multi-turn (AiChat)
+- Multimodal: `completeMultimodal(systemPrompt, imagePath, userText)` for image analysis (non-streaming, returns Future<String>)
+- `sendMultimodalMessage` (SDK) is non-streaming only — no streaming for image input
+- `AiModelInfo.supportsVision` — Gemma 4 models support vision, Qwen3 models do not
+- `AiService.isVisionModel` — check before invoking image features; show switch prompt if false
+- GPU backend with automatic CPU fallback
+- Config keys in SQLite: `aiModelPath`, `aiBackend`
+- New config rows are added via `db.ensureConfig()` in `NoteApp._asyncInit()` (not only `_initSQLs`) for database migration safety
+
+### AI Graceful Degradation (必须遵守)
+
+所有 AI 增强功能必须在模型未就绪时优雅降级，绝不影响正常 UI 交互：
+
+- **UI 渲染**: AI 相关按钮/指示器仅在 `AiService.instance.isReady` 为 true 时渲染
+- **调用保护**: 所有 AI 调用前必须加 guard clause `if (!AiService.instance.isReady) return;`
+- **错误处理**: AI 流式调用必须包裹在 try-catch 中，出错时静默重置状态（不弹错误提示）
+- **独立性**: AI 失败绝不阻塞或破坏正常 app 功能，游戏逻辑/笔记操作不依赖 AI 代码路径
+
+```dart
+// 标准模式:
+if (!AiService.instance.isReady) return;
+try {
+  // stream AI response
+} catch (_) {
+  // 静默清除状态，不向用户展示错误
+}
+```
+
+### Gotchas
+
+- **Dart SDK**: Project uses `>=2.12.0 <4.0.0` — switch cases need `break` statements (no Dart 3 exhaustive patterns)
+- **Android minSdk**: Must be ≥24 for `flutter_litert_lm`
+- **flutter analyze**: This project has many pre-existing `info` lint warnings (file_names, prefer_const, etc.) — only `error` level matters
+- **image_picker**: iOS needs `NSCameraUsageDescription` + `NSPhotoLibraryUsageDescription` in Info.plist; Android needs `<uses-permission android:name="android.permission.CAMERA" />` in manifest
+- **flutter_litert_lm multimodal API**: `conversation.sendMultimodalMessage(List<LiteLmContent>)` — non-streaming; `sendMessageStream(String)` — streaming but text-only

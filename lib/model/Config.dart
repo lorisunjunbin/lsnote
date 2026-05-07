@@ -2,8 +2,9 @@ class Config {
 
   static final String primarySwatch = "primarySwatch";
   static final String hiddenDone = "hiddenDone";
-  static final String aiHost = "aiHost";
-  static final String aiPort = "aiPort";
+  static final String aiModelPath = "aiModelPath";
+  static final String aiBackend = "aiBackend";
+  static final String aiLanguage = "aiLanguage";
 
   final int? id;
   final String? name;

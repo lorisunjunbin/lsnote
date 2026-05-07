@@ -276,9 +276,13 @@ class NoteApp extends StatelessWidget {
       Config cfgHiddenDone = await db.getConfig(Config.hiddenDone);
       scn.setHiddenDone(cfgHiddenDone.value == '1' ? true : false);
 
-      await db.ensureConfig(Config.aiHost, '127.0.0.1');
-      await db.ensureConfig(Config.aiPort, '8888');
+      await db.ensureConfig(Config.aiModelPath, '');
+      await db.ensureConfig(Config.aiBackend, 'gpu');
+      await db.ensureConfig(Config.aiLanguage, 'zh');
       await AiService.instance.loadConfig();
+      if (AiService.instance.modelPath.isNotEmpty) {
+        AiService.instance.initialize();
+      }
     });
     return true;
   }

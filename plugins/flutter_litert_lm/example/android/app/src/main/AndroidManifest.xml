@@ -1,0 +1,68 @@
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- Needed to download model files from HuggingFace at runtime. -->
+    <uses-permission android:name="android.permission.INTERNET"/>
+    <application
+        android:label="flutter_litert_lm_example"
+        android:name="${applicationName}"
+        android:icon="@mipmap/ic_launcher">
+        <!--
+            LiteRT-LM's GPU backend uses OpenCL for matrix ops. libOpenCL.so
+            is NOT part of the public Android NDK; it's shipped by the GPU
+            vendor under /vendor/lib64/ and apps targeting Android 12+ (API
+            31) must explicitly request access via <uses-native-library>,
+            otherwise the dynamic linker silently refuses dlopen() and
+            inference falls back to CPU or fails outright. Listing all the
+            common vendor names below covers Qualcomm Adreno (libOpenCL.so),
+            Pixel Tensor (libOpenCL-pixel.so), and Android Auto builds
+            (libOpenCL-car.so). All are marked required="false" so devices
+            without OpenCL can still install the app.
+        -->
+        <uses-native-library
+            android:name="libOpenCL.so"
+            android:required="false" />
+        <uses-native-library
+            android:name="libOpenCL-car.so"
+            android:required="false" />
+        <uses-native-library
+            android:name="libOpenCL-pixel.so"
+            android:required="false" />
+        <activity
+            android:name=".MainActivity"
+            android:exported="true"
+            android:launchMode="singleTop"
+            android:taskAffinity=""
+            android:theme="@style/LaunchTheme"
+            android:configChanges="orientation|keyboardHidden|keyboard|screenSize|smallestScreenSize|locale|layoutDirection|fontScale|screenLayout|density|uiMode"
+            android:hardwareAccelerated="true"
+            android:windowSoftInputMode="adjustResize">
+            <!-- Specifies an Android theme to apply to this Activity as soon as
+                 the Android process has started. This theme is visible to the user
+                 while the Flutter UI initializes. After that, this theme continues
+                 to determine the Window background behind the Flutter UI. -->
+            <meta-data
+              android:name="io.flutter.embedding.android.NormalTheme"
+              android:resource="@style/NormalTheme"
+              />
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN"/>
+                <category android:name="android.intent.category.LAUNCHER"/>
+            </intent-filter>
+        </activity>
+        <!-- Don't delete the meta-data below.
+             This is used by the Flutter tool to generate GeneratedPluginRegistrant.java -->
+        <meta-data
+            android:name="flutterEmbedding"
+            android:value="2" />
+    </application>
+    <!-- Required to query activities that can process text, see:
+         https://developer.android.com/training/package-visibility and
+         https://developer.android.com/reference/android/content/Intent#ACTION_PROCESS_TEXT.
+
+         In particular, this is used by the Flutter engine in io.flutter.plugin.text.ProcessTextPlugin. -->
+    <queries>
+        <intent>
+            <action android:name="android.intent.action.PROCESS_TEXT"/>
+            <data android:mimeType="text/plain"/>
+        </intent>
+    </queries>
+</manifest>

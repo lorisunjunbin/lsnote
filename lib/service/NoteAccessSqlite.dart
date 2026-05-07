@@ -55,13 +55,13 @@ class NoteAccessSqlite {
       INSERT INTO config
             (name, value)
           VALUES
-            ('aiHost','127.0.0.1');
+            ('aiModelPath','');
     ''',
     '''
       INSERT INTO config
             (name, value)
           VALUES
-            ('aiPort','8888');
+            ('aiBackend','gpu');
     '''
   ];
 

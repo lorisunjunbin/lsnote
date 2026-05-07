@@ -1,8 +1,12 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:async/async.dart';
 import 'package:lorisun_note/screen/NumberPuzzles.dart';
+import 'package:path_provider/path_provider.dart';
 import 'package:provider/provider.dart';
+import 'package:record/record.dart';
 
 import '../changenotifier/SwitcherChangeNotifier.dart';
 import '../changenotifier/ThemeChangeNotifier.dart';
@@ -36,6 +40,16 @@ class _NoteLandingState extends State<NoteLanding> {
   int _currentColorIndex = 0;
 
   final Map<int, bool> _cardExpandedStates = {};
+  final Map<int, List<String>> _undoStacks = {};
+  final Map<int, List<String>> _redoStacks = {};
+  final Map<int, bool> _isOrganizing = {};
+  bool _welcomeRequested = false;
+
+  final AudioRecorder _recorder = AudioRecorder();
+  bool _isRecording = false;
+  int _recordingDuration = 0;
+  Timer? _recordingTimer;
+  bool _isTranscribing = false;
 
   void _toggleCardExpansion(int noteId) {
     setState(() {
@@ -97,6 +111,7 @@ class _NoteLandingState extends State<NoteLanding> {
         final parsedIndex = int.tryParse(cfgPrimarySwatch.value ?? '0') ?? 0;
         _currentColorIndex = parsedIndex.clamp(0, AppTheme.themeColorPalette.length - 1);
         _updateUI(ctx);
+        _requestWelcome();
       });
     }
     return true;
@@ -105,6 +120,219 @@ class _NoteLandingState extends State<NoteLanding> {
   Future<void> _updateUI(ctx) async {
     await _reloadData(ctx);
     setState(() {});
+  }
+
+  void _requestWelcome() {
+    if (_welcomeRequested || !AiService.instance.isReady) return;
+    _welcomeRequested = true;
+
+    final hour = DateTime.now().hour;
+    final timeOfDay = hour < 6
+        ? 'late night'
+        : hour < 12
+            ? 'morning'
+            : hour < 18
+                ? 'afternoon'
+                : 'evening';
+
+    final buffer = StringBuffer();
+    final now = DateTime.now();
+    final topics = ['productivity', 'creativity', 'coffee', 'weather', 'cats', 'space', 'food', 'music', 'sleep', 'coding', 'dreams', 'books'];
+    final topic = topics[now.millisecondsSinceEpoch % topics.length];
+    final dayOfWeek = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'][now.weekday - 1];
+    AiService.instance
+        .completeStream(
+      'You are a witty, humorous assistant embedded in a note-taking app called LSNOTE. Generate a single short funny/quirky greeting (1 sentence, under 20 words). Be creative, use wordplay or puns. NEVER repeat a previous greeting, always be fresh and different. Output ONLY the greeting, nothing else. ${AiService.instance.contextInfo}',
+      'Time: $timeOfDay, $dayOfWeek. Theme hint: $topic. Random: ${now.millisecondsSinceEpoch}. Greet me!',
+    )
+        .listen(
+      (token) {
+        buffer.write(token);
+      },
+      onDone: () {
+        final msg = buffer.toString().trim();
+        if (msg.isNotEmpty && mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Row(
+                children: [
+                  const Icon(Icons.auto_awesome, size: 16, color: Colors.white),
+                  const SizedBox(width: 8),
+                  Expanded(child: Text(msg)),
+                ],
+              ),
+              duration: const Duration(seconds: 4),
+              behavior: SnackBarBehavior.floating,
+              margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+            ),
+          );
+        }
+      },
+      onError: (_) {},
+    );
+  }
+
+  Future<void> _showRecordingSheet() async {
+    if (!AiService.instance.isReady || !AiService.instance.isAudioModel) return;
+    if (!await _recorder.hasPermission()) return;
+
+    final sl = SimpleLocalizations.of(context)!;
+    final colorScheme = Theme.of(context).colorScheme;
+
+    await showModalBottomSheet(
+      context: context,
+      isDismissible: false,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (sheetCtx) {
+        return StatefulBuilder(
+          builder: (ctx, setSheetState) {
+            Future<void> toggleRec() async {
+              if (_isRecording) {
+                _recordingTimer?.cancel();
+                final path = await _recorder.stop();
+                setSheetState(() {
+                  _isRecording = false;
+                  _recordingDuration = 0;
+                });
+                Navigator.of(ctx).pop();
+                if (path == null) return;
+                _transcribeAndCreateNote(path);
+              } else {
+                final dir = await getTemporaryDirectory();
+                final path =
+                    '${dir.path}/voice_landing_${DateTime.now().millisecondsSinceEpoch}.wav';
+                await _recorder.start(
+                  const RecordConfig(
+                    encoder: AudioEncoder.wav,
+                    sampleRate: 16000,
+                    numChannels: 1,
+                  ),
+                  path: path,
+                );
+                setSheetState(() {
+                  _isRecording = true;
+                  _recordingDuration = 0;
+                });
+                _recordingTimer =
+                    Timer.periodic(const Duration(seconds: 1), (_) {
+                  if (mounted) setSheetState(() => _recordingDuration++);
+                });
+              }
+            }
+
+            return Padding(
+              padding: const EdgeInsets.all(24),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    sl.getText('aiVoiceToNote') ?? 'Voice to Note',
+                    style: TextStyle(
+                      fontSize: 18,
+                      fontWeight: FontWeight.w600,
+                      color: colorScheme.onSurface,
+                    ),
+                  ),
+                  const SizedBox(height: 24),
+                  if (_isRecording) ...[
+                    Icon(Icons.fiber_manual_record,
+                        size: 48, color: Colors.red),
+                    const SizedBox(height: 12),
+                    Text(
+                      '${_recordingDuration}s',
+                      style: TextStyle(
+                        fontSize: 32,
+                        fontWeight: FontWeight.w300,
+                        color: colorScheme.onSurface,
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      sl.getText('aiRecording') ?? 'Recording...',
+                      style: TextStyle(
+                        fontSize: 14,
+                        color: colorScheme.onSurfaceVariant,
+                      ),
+                    ),
+                  ] else ...[
+                    Icon(Icons.mic, size: 48, color: colorScheme.primary),
+                    const SizedBox(height: 12),
+                    Text(
+                      sl.getText('aiRecordHint') ?? 'Tap to record',
+                      style: TextStyle(
+                        fontSize: 14,
+                        color: colorScheme.onSurfaceVariant,
+                      ),
+                    ),
+                  ],
+                  const SizedBox(height: 24),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                    children: [
+                      TextButton(
+                        onPressed: () async {
+                          if (_isRecording) {
+                            _recordingTimer?.cancel();
+                            await _recorder.stop();
+                            setState(() {
+                              _isRecording = false;
+                              _recordingDuration = 0;
+                            });
+                          }
+                          Navigator.of(ctx).pop();
+                        },
+                        child: Text(sl.getText('cancelLabel') ?? 'Cancel'),
+                      ),
+                      ElevatedButton.icon(
+                        icon: Icon(_isRecording ? Icons.stop : Icons.mic),
+                        label: Text(_isRecording
+                            ? (sl.getText('aiTranscribing') ?? 'Stop')
+                            : (sl.getText('start') ?? 'Start')),
+                        onPressed: toggleRec,
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 16),
+                ],
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
+
+  Future<void> _transcribeAndCreateNote(String audioPath) async {
+    if (!AiService.instance.isReady) return;
+    setState(() => _isTranscribing = true);
+
+    try {
+      final systemPrompt =
+          '${AiService.instance.contextInfo} Transcribe the audio accurately. Output only the transcribed text, nothing else.';
+      final transcription =
+          await AiService.instance.completeAudio(systemPrompt, audioPath, null);
+
+      if (transcription.trim().isEmpty) return;
+
+      final title = transcription.trim().length > 20
+          ? transcription.trim().substring(0, 20)
+          : transcription.trim();
+
+      final note = Note(
+        title: title,
+        content: transcription.trim(),
+        targetDate: DateTime.now(),
+        sequence: 0,
+        isDone: false,
+      );
+      await db.addNote(note);
+      await _updateUI(context);
+    } catch (_) {
+    } finally {
+      if (mounted) setState(() => _isTranscribing = false);
+    }
   }
 
   Future<void> _reloadData(ctx) async {
@@ -148,6 +376,8 @@ class _NoteLandingState extends State<NoteLanding> {
 
   @override
   void dispose() {
+    _recordingTimer?.cancel();
+    _recorder.dispose();
     _ctrls.forEach((key, value) {
       value.dispose();
     });
@@ -192,11 +422,38 @@ class _NoteLandingState extends State<NoteLanding> {
                       ),
               floatingActionButtonLocation:
                   FloatingActionButtonLocation.endFloat,
-              floatingActionButton: FloatingActionButton(
-                onPressed: _onBtnPress,
-                elevation: 4,
-                mini: true,
-                child: const Icon(Icons.add),
+              floatingActionButton: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  if (AiService.instance.isReady &&
+                      AiService.instance.isAudioModel)
+                    Padding(
+                      padding: const EdgeInsets.only(bottom: 8),
+                      child: FloatingActionButton(
+                        heroTag: 'voice',
+                        onPressed: (_isTranscribing) ? null : _showRecordingSheet,
+                        elevation: 4,
+                        mini: true,
+                        backgroundColor: _isRecording
+                            ? Colors.red
+                            : null,
+                        child: _isTranscribing
+                            ? const SizedBox(
+                                width: 18,
+                                height: 18,
+                                child: CircularProgressIndicator(
+                                    strokeWidth: 2, color: Colors.white))
+                            : Icon(_isRecording ? Icons.stop : Icons.mic),
+                      ),
+                    ),
+                  FloatingActionButton(
+                    heroTag: 'add',
+                    onPressed: _onBtnPress,
+                    elevation: 4,
+                    mini: true,
+                    child: const Icon(Icons.add),
+                  ),
+                ],
               ),
               bottomNavigationBar:
                   _buildBottomNavigationBar(context, sl!, colorScheme, switcherProvider));
@@ -380,6 +637,73 @@ class _NoteLandingState extends State<NoteLanding> {
           );
   }
 
+  void _pushSnapshot(int noteId) {
+    final ctrl = _ctrls['${noteId}cblt'];
+    if (ctrl == null) return;
+    _undoStacks.putIfAbsent(noteId, () => []);
+    _redoStacks.putIfAbsent(noteId, () => []);
+    _undoStacks[noteId]!.add(ctrl.text);
+    _redoStacks[noteId]!.clear();
+  }
+
+  void _undo(int noteId) {
+    final undoStack = _undoStacks[noteId];
+    final ctrl = _ctrls['${noteId}cblt'];
+    if (undoStack == null || undoStack.isEmpty || ctrl == null) return;
+    _redoStacks.putIfAbsent(noteId, () => []);
+    _redoStacks[noteId]!.add(ctrl.text);
+    setState(() {
+      ctrl.text = undoStack.removeLast();
+      ctrl.selection = TextSelection.collapsed(offset: ctrl.text.length);
+    });
+  }
+
+  void _redo(int noteId) {
+    final redoStack = _redoStacks[noteId];
+    final ctrl = _ctrls['${noteId}cblt'];
+    if (redoStack == null || redoStack.isEmpty || ctrl == null) return;
+    _undoStacks.putIfAbsent(noteId, () => []);
+    _undoStacks[noteId]!.add(ctrl.text);
+    setState(() {
+      ctrl.text = redoStack.removeLast();
+      ctrl.selection = TextSelection.collapsed(offset: ctrl.text.length);
+    });
+  }
+
+  void _organizeNoteContent(Note item) {
+    if (!AiService.instance.isReady) return;
+    final ctrl = _ctrls['${item.id}cblt'];
+    if (ctrl == null || ctrl.text.trim().isEmpty) return;
+
+    _pushSnapshot(item.id!);
+    setState(() => _isOrganizing[item.id!] = true);
+
+    final rawText = ctrl.text.trim();
+    final buffer = StringBuffer();
+    AiService.instance
+        .completeStream(
+      'You are a note organizing assistant. Take the user\'s messy input and organize it into a well-structured note with clear categories and bullet points. Keep all original information, just reorganize it logically. Do NOT add any preamble or explanation, just output the organized content directly. ${AiService.instance.contextInfo}',
+      rawText,
+    )
+        .listen(
+      (token) {
+        buffer.write(token);
+        if (mounted) {
+          setState(() {
+            ctrl.text = buffer.toString();
+            ctrl.selection = TextSelection.collapsed(offset: ctrl.text.length);
+          });
+        }
+      },
+      onDone: () {
+        if (mounted) setState(() => _isOrganizing[item.id!] = false);
+      },
+      onError: (_) {
+        if (mounted) setState(() => _isOrganizing[item.id!] = false);
+      },
+    );
+  }
+
   Future<void> _handleCardSave(Note item, SimpleLocalizations sl) async {
     if (_ctrls.containsKey('${item.id}cblt')) {
       await db.updateNoteItemContent(
@@ -557,19 +881,24 @@ class _NoteLandingState extends State<NoteLanding> {
         return StatefulBuilder(
           builder: (ctx, setSheetState) {
             Future<void> runAction(String systemPrompt) async {
+              if (!AiService.instance.isReady) {
+                if (mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                        content: Text(sl.getText('aiModelNotReady') ??
+                            'Please configure AI model in AI settings')),
+                  );
+                }
+                return;
+              }
               setSheetState(() {
                 isLoading = true;
                 aiResult = '';
               });
 
               try {
-                final messages = [
-                  {'role': 'system', 'content': systemPrompt},
-                  {'role': 'user', 'content': content},
-                ];
-
                 await for (final token
-                    in AiService.instance.completeStream(messages)) {
+                    in AiService.instance.completeStream(systemPrompt, content)) {
                   setSheetState(() {
                     aiResult = (aiResult ?? '') + token;
                   });
@@ -623,7 +952,7 @@ class _NoteLandingState extends State<NoteLanding> {
                           colorScheme,
                           isLoading,
                           () => runAction(
-                              'Summarize the following text into concise bullet points.'),
+                              'Summarize the following text into concise bullet points. ${AiService.instance.contextInfo}'),
                         ),
                         _aiActionChip(
                           sl.getText('aiPolish') ?? 'Polish',
@@ -631,7 +960,7 @@ class _NoteLandingState extends State<NoteLanding> {
                           colorScheme,
                           isLoading,
                           () => runAction(
-                              'Improve the grammar and clarity of the following text. Keep the original meaning.'),
+                              'Improve the grammar and clarity of the following text. Keep the original meaning. ${AiService.instance.contextInfo}'),
                         ),
                         _aiActionChip(
                           sl.getText('aiTranslate') ?? 'Translate',
@@ -647,7 +976,7 @@ class _NoteLandingState extends State<NoteLanding> {
                           colorScheme,
                           isLoading,
                           () => runAction(
-                              'Continue writing based on the following text. Match the style and topic.'),
+                              'Continue writing based on the following text. Match the style and topic. ${AiService.instance.contextInfo}'),
                         ),
                       ],
                     ),
@@ -925,6 +1254,50 @@ class _NoteLandingState extends State<NoteLanding> {
                               constraints: BoxConstraints(minWidth: 32, minHeight: 28),
                               onPressed: () => _showAiAssistSheet(item, sl, colorScheme),
                             ),
+                            if (AiService.instance.isReady) ...[
+                              const SizedBox(width: 4),
+                              IconButton(
+                                icon: (_isOrganizing[item.id] == true)
+                                    ? const SizedBox(
+                                        width: 16,
+                                        height: 16,
+                                        child: CircularProgressIndicator(strokeWidth: 2))
+                                    : Icon(Icons.auto_fix_high, size: 20),
+                                color: colorScheme.tertiary,
+                                tooltip: sl.getText('aiOrganize') ?? 'AI Organize',
+                                padding: EdgeInsets.zero,
+                                constraints: BoxConstraints(minWidth: 32, minHeight: 28),
+                                onPressed: (_isOrganizing[item.id] == true)
+                                    ? null
+                                    : () => _organizeNoteContent(item),
+                              ),
+                            ],
+                            if ((_undoStacks[item.id]?.isNotEmpty ?? false) ||
+                                (_redoStacks[item.id]?.isNotEmpty ?? false)) ...[
+                              const SizedBox(width: 4),
+                              IconButton(
+                                icon: Icon(Icons.undo, size: 18),
+                                color: (_undoStacks[item.id]?.isNotEmpty ?? false)
+                                    ? colorScheme.onSurfaceVariant
+                                    : colorScheme.outlineVariant,
+                                padding: EdgeInsets.zero,
+                                constraints: BoxConstraints(minWidth: 28, minHeight: 28),
+                                onPressed: (_undoStacks[item.id]?.isNotEmpty ?? false)
+                                    ? () => _undo(item.id!)
+                                    : null,
+                              ),
+                              IconButton(
+                                icon: Icon(Icons.redo, size: 18),
+                                color: (_redoStacks[item.id]?.isNotEmpty ?? false)
+                                    ? colorScheme.onSurfaceVariant
+                                    : colorScheme.outlineVariant,
+                                padding: EdgeInsets.zero,
+                                constraints: BoxConstraints(minWidth: 28, minHeight: 28),
+                                onPressed: (_redoStacks[item.id]?.isNotEmpty ?? false)
+                                    ? () => _redo(item.id!)
+                                    : null,
+                              ),
+                            ],
                           ],
                         ),
                       ],

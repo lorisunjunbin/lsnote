@@ -1,8 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/scheduler.dart';
+import 'package:image_picker/image_picker.dart';
+import 'package:path_provider/path_provider.dart';
+import 'package:record/record.dart';
 
 import '../i18n/SimpleLocalizations.dart';
 import '../model/Note.dart';
+import '../service/AiService.dart';
 import '../service/NoteAccessSqlite.dart';
 import '../utils/NavigationHelper.dart';
 import 'NoteLanding.dart';
@@ -22,6 +26,11 @@ class _NoteItemState extends State<NoteItem>
   late final AnimationController _animationController;
   late final Animation<double> _fadeAnimation;
   late final Animation<Offset> _slideAnimation;
+  bool _isAiProcessing = false;
+  bool _isRecording = false;
+  int _recordingDuration = 0;
+  final AudioRecorder _recorder = AudioRecorder();
+  String? _recordingPath;
 
   @override
   void initState() {
@@ -48,10 +57,25 @@ class _NoteItemState extends State<NoteItem>
     SchedulerBinding.instance.addPostFrameCallback((_) {
       _animationController.forward();
     });
+
+    _contentCtl.addListener(_onContentChanged);
+    _waitForModelReady();
+  }
+
+  bool _contentWasEmpty = true;
+
+  void _onContentChanged() {
+    final isEmpty = _contentCtl.text.trim().isEmpty;
+    if (isEmpty != _contentWasEmpty) {
+      _contentWasEmpty = isEmpty;
+      if (mounted) setState(() {});
+    }
   }
 
   @override
   void dispose() {
+    _recorder.dispose();
+    _contentCtl.removeListener(_onContentChanged);
     _contentCtl.dispose();
     _titleCtl.dispose();
     _animationController.dispose();
@@ -286,43 +310,349 @@ class _NoteItemState extends State<NoteItem>
   }
 
   Widget _buildNoteDetailTextField(ColorScheme colorScheme, SimpleLocalizations sl) {
-    return TextField(
-      controller: _contentCtl,
-      keyboardType: TextInputType.multiline,
-      maxLines: null,
-      minLines: 8,
-      textCapitalization: TextCapitalization.sentences,
-      style: TextStyle(
-        fontSize: 15,
-        height: 1.5,
-        color: colorScheme.onSurface,
-      ),
-      decoration: InputDecoration(
-        hintText: sl.getText('contentLabel') ?? 'Content',
-        hintStyle: TextStyle(
-          color: colorScheme.onSurfaceVariant,
-        ),
-        alignLabelWithHint: true,
-        filled: true,
-        fillColor: colorScheme.surfaceContainerHighest,
-        border: OutlineInputBorder(
-          borderRadius: BorderRadius.zero,
-          borderSide: BorderSide.none,
-        ),
-        enabledBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.zero,
-          borderSide: BorderSide.none,
-        ),
-        focusedBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.zero,
-          borderSide: BorderSide(
-            color: colorScheme.primary,
-            width: 2,
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        TextField(
+          controller: _contentCtl,
+          keyboardType: TextInputType.multiline,
+          maxLines: null,
+          minLines: 8,
+          textCapitalization: TextCapitalization.sentences,
+          style: TextStyle(
+            fontSize: 15,
+            height: 1.5,
+            color: colorScheme.onSurface,
+          ),
+          decoration: InputDecoration(
+            hintText: sl.getText('contentLabel') ?? 'Content',
+            hintStyle: TextStyle(
+              color: colorScheme.onSurfaceVariant,
+            ),
+            alignLabelWithHint: true,
+            filled: true,
+            fillColor: colorScheme.surfaceContainerHighest,
+            border: OutlineInputBorder(
+              borderRadius: BorderRadius.zero,
+              borderSide: BorderSide.none,
+            ),
+            enabledBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.zero,
+              borderSide: BorderSide.none,
+            ),
+            focusedBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.zero,
+              borderSide: BorderSide(
+                color: colorScheme.primary,
+                width: 2,
+              ),
+            ),
+            contentPadding: const EdgeInsets.symmetric(
+              horizontal: 16,
+              vertical: 12,
+            ),
           ),
         ),
-        contentPadding: const EdgeInsets.symmetric(
-          horizontal: 16,
-          vertical: 12,
+        if (AiService.instance.isReady) ...[
+          const SizedBox(height: 8),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: [
+              _buildAiChip(sl, 'aiOrganize', Icons.auto_fix_high, _organizeContent),
+              _buildAiChip(sl, 'aiPolish', Icons.brush, _polishContent),
+              _buildAiChip(sl, 'aiContinue', Icons.edit_note, _continueContent),
+              _buildAiChip(sl, 'aiTranslate', Icons.translate, _translateContent),
+              ActionChip(
+                avatar: _isAiProcessing
+                    ? const SizedBox(
+                        width: 14, height: 14,
+                        child: CircularProgressIndicator(strokeWidth: 2))
+                    : const Icon(Icons.photo_camera, size: 14),
+                label: Text(sl.getText('aiPhotoToNote') ?? 'Photo to Note',
+                    style: const TextStyle(fontSize: 11)),
+                onPressed: _isAiProcessing ? null : _photoToNote,
+              ),
+              ActionChip(
+                avatar: _isRecording
+                    ? const Icon(Icons.stop, size: 14, color: Colors.red)
+                    : (_isAiProcessing
+                        ? const SizedBox(
+                            width: 14, height: 14,
+                            child: CircularProgressIndicator(strokeWidth: 2))
+                        : const Icon(Icons.mic, size: 14)),
+                label: Text(
+                    _isRecording
+                        ? '${_recordingDuration}s'
+                        : (sl.getText('aiVoiceToNote') ?? 'Voice to Note'),
+                    style: const TextStyle(fontSize: 11)),
+                onPressed: _isAiProcessing ? null : _toggleRecording,
+              ),
+            ],
+          ),
+        ] else if (AiService.instance.state == AiServiceState.loading) ...[
+          const SizedBox(height: 8),
+          Row(
+            children: [
+              SizedBox(
+                width: 12,
+                height: 12,
+                child: CircularProgressIndicator(
+                  strokeWidth: 2,
+                  color: colorScheme.primary,
+                ),
+              ),
+              const SizedBox(width: 8),
+              Text(
+                sl.getText('aiModelLoading') ?? 'Loading model...',
+                style: TextStyle(fontSize: 11, color: colorScheme.onSurfaceVariant),
+              ),
+            ],
+          ),
+        ],
+      ],
+    );
+  }
+
+  void _waitForModelReady() async {
+    if (AiService.instance.isReady) return;
+    if (AiService.instance.state == AiServiceState.loading) {
+      while (AiService.instance.state == AiServiceState.loading) {
+        await Future.delayed(const Duration(milliseconds: 500));
+      }
+      if (mounted) setState(() {});
+    }
+  }
+
+  Widget _buildAiChip(SimpleLocalizations sl, String key, IconData icon, VoidCallback onTap) {
+    return ActionChip(
+      avatar: _isAiProcessing
+          ? const SizedBox(
+              width: 14, height: 14,
+              child: CircularProgressIndicator(strokeWidth: 2))
+          : Icon(icon, size: 14),
+      label: Text(sl.getText(key) ?? key, style: const TextStyle(fontSize: 11)),
+      onPressed: (_isAiProcessing || _contentCtl.text.trim().isEmpty)
+          ? null
+          : onTap,
+    );
+  }
+
+  void _runAiAction(String systemPrompt) {
+    if (!AiService.instance.isReady) return;
+    final rawText = _contentCtl.text.trim();
+    if (rawText.isEmpty) return;
+
+    setState(() => _isAiProcessing = true);
+
+    final buffer = StringBuffer();
+    AiService.instance
+        .completeStream(systemPrompt, rawText)
+        .listen(
+      (token) {
+        buffer.write(token);
+        if (mounted) {
+          setState(() => _contentCtl.text = buffer.toString());
+          _contentCtl.selection = TextSelection.collapsed(
+              offset: _contentCtl.text.length);
+        }
+      },
+      onDone: () {
+        if (mounted) setState(() => _isAiProcessing = false);
+      },
+      onError: (_) {
+        if (mounted) setState(() => _isAiProcessing = false);
+      },
+    );
+  }
+
+  void _organizeContent() {
+    _runAiAction(
+      'You are a note organizing assistant. Take the user\'s messy input and organize it into a well-structured note with clear categories and bullet points. Keep all original information, just reorganize it logically. Do NOT add any preamble or explanation, just output the organized content directly. ${AiService.instance.contextInfo}',
+    );
+  }
+
+  void _polishContent() {
+    _runAiAction(
+      'Improve the grammar, clarity and expression of the following text. Keep the original meaning. Do NOT add any preamble or explanation, just output the polished content directly. ${AiService.instance.contextInfo}',
+    );
+  }
+
+  void _continueContent() {
+    _runAiAction(
+      'Continue writing based on the following text. Match the style and topic. Do NOT repeat the original text, just output the continuation directly. ${AiService.instance.contextInfo}',
+    );
+  }
+
+  void _translateContent() {
+    _runAiAction(
+      'Translate the following text. If it is Chinese, translate to English; if it is English, translate to Chinese. Do NOT add any preamble or explanation, just output the translation directly.',
+    );
+  }
+
+  void _photoToNote() async {
+    if (!AiService.instance.isReady) return;
+    if (!AiService.instance.isVisionModel) {
+      _showVisionModelHint();
+      return;
+    }
+    final sl = SimpleLocalizations.of(context)!;
+
+    final source = await showModalBottomSheet<ImageSource>(
+      context: context,
+      builder: (ctx) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ListTile(
+              leading: const Icon(Icons.photo_camera),
+              title: Text(sl.getText('aiCamera') ?? 'Camera'),
+              onTap: () => Navigator.pop(ctx, ImageSource.camera),
+            ),
+            ListTile(
+              leading: const Icon(Icons.photo_library),
+              title: Text(sl.getText('aiGallery') ?? 'Gallery'),
+              onTap: () => Navigator.pop(ctx, ImageSource.gallery),
+            ),
+          ],
+        ),
+      ),
+    );
+    if (source == null) return;
+
+    final picker = ImagePicker();
+    final XFile? image = await picker.pickImage(
+        source: source, imageQuality: 85, maxWidth: 1024);
+    if (image == null) return;
+
+    setState(() => _isAiProcessing = true);
+
+    try {
+      final result = await AiService.instance.completeMultimodal(
+        'You are a note-taking assistant. Analyze this image and generate well-structured note content describing what you see. Output only the note content, no preamble. ${AiService.instance.contextInfo}',
+        image.path,
+        null,
+      );
+      if (mounted) {
+        setState(() {
+          _contentCtl.text = result;
+          _contentCtl.selection =
+              TextSelection.collapsed(offset: result.length);
+        });
+      }
+    } catch (_) {}
+    if (mounted) setState(() => _isAiProcessing = false);
+  }
+
+  void _showVisionModelHint() {
+    final sl = SimpleLocalizations.of(context)!;
+    final colorScheme = Theme.of(context).colorScheme;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          sl.getText('aiVisionNotSupported') ??
+              'Current model does not support image. Switch to a vision model?',
+          style: TextStyle(color: colorScheme.onPrimaryContainer),
+        ),
+        backgroundColor: colorScheme.primaryContainer,
+        behavior: SnackBarBehavior.floating,
+        action: SnackBarAction(
+          label: sl.getText('aiSwitchModel') ?? 'Switch',
+          onPressed: () async {
+            final visionModel = AiService.availableModels.firstWhere(
+                (m) => m.supportsVision,
+                orElse: () => AiService.availableModels[0]);
+            setState(() => _isAiProcessing = true);
+            await for (final _ in AiService.instance.switchModel(visionModel)) {}
+            if (mounted) setState(() => _isAiProcessing = false);
+          },
+        ),
+      ),
+    );
+  }
+
+  void _toggleRecording() async {
+    if (!AiService.instance.isReady) return;
+    if (!AiService.instance.isAudioModel) {
+      _showAudioModelHint();
+      return;
+    }
+
+    if (_isRecording) {
+      final path = await _recorder.stop();
+      setState(() {
+        _isRecording = false;
+        _recordingDuration = 0;
+      });
+      if (path == null) return;
+      setState(() => _isAiProcessing = true);
+      try {
+        final result = await AiService.instance.completeAudio(
+          'You are a transcription assistant. Transcribe the audio content accurately into text. Output only the transcription, no preamble or explanation. ${AiService.instance.contextInfo}',
+          path,
+          null,
+        );
+        if (mounted) {
+          final existing = _contentCtl.text;
+          _contentCtl.text =
+              existing.isEmpty ? result : '$existing\n$result';
+          _contentCtl.selection =
+              TextSelection.collapsed(offset: _contentCtl.text.length);
+        }
+      } catch (_) {}
+      if (mounted) setState(() => _isAiProcessing = false);
+    } else {
+      if (!await _recorder.hasPermission()) return;
+      final dir = await getTemporaryDirectory();
+      _recordingPath =
+          '${dir.path}/voice_note_${DateTime.now().millisecondsSinceEpoch}.wav';
+      await _recorder.start(
+        const RecordConfig(
+          encoder: AudioEncoder.wav,
+          sampleRate: 16000,
+          numChannels: 1,
+        ),
+        path: _recordingPath!,
+      );
+      setState(() {
+        _isRecording = true;
+        _recordingDuration = 0;
+      });
+      _tickRecordingDuration();
+    }
+  }
+
+  void _tickRecordingDuration() async {
+    while (_isRecording && mounted) {
+      await Future.delayed(const Duration(seconds: 1));
+      if (_isRecording && mounted) {
+        setState(() => _recordingDuration++);
+      }
+    }
+  }
+
+  void _showAudioModelHint() {
+    final sl = SimpleLocalizations.of(context)!;
+    final colorScheme = Theme.of(context).colorScheme;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          sl.getText('aiAudioNotSupported') ??
+              'Current model does not support audio. Switch to an audio model?',
+          style: TextStyle(color: colorScheme.onPrimaryContainer),
+        ),
+        backgroundColor: colorScheme.primaryContainer,
+        behavior: SnackBarBehavior.floating,
+        action: SnackBarAction(
+          label: sl.getText('aiSwitchModel') ?? 'Switch',
+          onPressed: () async {
+            final audioModel = AiService.availableModels.firstWhere(
+                (m) => m.supportsAudio,
+                orElse: () => AiService.availableModels[0]);
+            setState(() => _isAiProcessing = true);
+            await for (final _ in AiService.instance.switchModel(audioModel)) {}
+            if (mounted) setState(() => _isAiProcessing = false);
+          },
         ),
       ),
     );

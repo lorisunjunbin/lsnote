@@ -7,6 +7,32 @@ S22Ultra and S24U and S26U
 - import/export data manually(backup before remove the app), standard json format
 - fingerprint authentication for app lock, if device support it
 
+## On-Device AI (v1.3.0)
+
+Powered by **Gemma 4 E4B-it** via LiteRT-LM, all AI features run locally on-device — no network required.
+
+### AI Chat
+- Multi-turn conversation with streaming responses
+- Attach a note as context for Q&A
+- Send images for AI analysis (vision)
+- Send voice messages for AI transcription (audio)
+
+### Note AI Assist
+- **Summarize** / **Polish** / **Translate** / **Continue** — via bottom sheet on each note card
+- **AI Organize** — restructure messy notes into clear bullet points
+- **Photo to Note** — take a photo or pick from gallery, AI extracts text
+- **Voice to Note** — record audio, AI transcribes and appends to note content
+
+### Quick Voice Note (Landing Page)
+- Tap the mic FAB to record audio
+- AI transcribes and auto-creates a new note
+
+### Model Management
+- Download and switch between multiple models (Gemma 4 E4B, E2B, Qwen3 4B, Qwen3 0.6B)
+- GPU backend with automatic CPU fallback
+- Device RAM detection with model recommendations
+- Custom model URL support
+
 ## Look & Feel
 
 ### APP ICON

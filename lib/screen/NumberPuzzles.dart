@@ -6,6 +6,7 @@ import 'package:provider/provider.dart';
 import '../model/GuessItem.dart';
 import '../i18n/SimpleLocalizations.dart';
 import '../changenotifier/GuessItemChangeNotifier.dart';
+import '../service/AiService.dart';
 
 class NumberPuzzles extends StatefulWidget {
   static final String routeName = '/NumberPuzzles';
@@ -27,6 +28,67 @@ class _NumberPuzzlesState extends State<NumberPuzzles> {
   int _emptyClickCount = 0;
   static const int _resetClickThreshold = 3;
 
+  String _aiHint = '';
+  bool _isHintLoading = false;
+  String _aiComment = '';
+
+  void _requestHint(GuessitemChangeNotifier provider) {
+    if (!AiService.instance.isReady || _isHintLoading) return;
+
+    final history = provider.guessItems
+        .map((itm) => '${itm.tryAnswer} → ${itm.result}')
+        .join('\n');
+
+    setState(() {
+      _isHintLoading = true;
+      _aiHint = '';
+    });
+
+    final buffer = StringBuffer();
+    AiService.instance
+        .completeStream(
+      'You are a fun companion for a 1A2B number guessing game. The secret is a 4-digit number with all unique digits (0-9). A = correct digit in correct position, B = correct digit in wrong position. Give a short, playful, cryptic hint (1 sentence max) based on the guess history. NEVER reveal the answer directly. ${AiService.instance.contextInfo}',
+      'Guess history:\n$history\nGive me a hint!',
+    )
+        .listen(
+      (token) {
+        buffer.write(token);
+        if (mounted) setState(() => _aiHint = buffer.toString());
+      },
+      onDone: () {
+        if (mounted) setState(() => _isHintLoading = false);
+      },
+      onError: (_) {
+        if (mounted) setState(() { _aiHint = ''; _isHintLoading = false; });
+      },
+    );
+  }
+
+  void _requestWinComment(GuessitemChangeNotifier provider) {
+    if (!AiService.instance.isReady) return;
+
+    final guessCount = provider.guessItems.length;
+    final firstTime = provider.guessItems.first.tryTime;
+    final lastTime = provider.guessItems.last.tryTime;
+    final totalSeconds = (lastTime != null && firstTime != null)
+        ? lastTime.difference(firstTime).inSeconds
+        : 0;
+
+    final buffer = StringBuffer();
+    AiService.instance
+        .completeStream(
+      'You are a fun game companion. The player just won a 1A2B number guessing game. Give exactly 1 short, fun, encouraging sentence about their performance. Be creative and playful. ${AiService.instance.contextInfo}',
+      'I won in $guessCount guesses, took $totalSeconds seconds total.',
+    )
+        .listen(
+      (token) {
+        buffer.write(token);
+        if (mounted) setState(() => _aiComment = buffer.toString());
+      },
+      onError: (_) {},
+    );
+  }
+
   void _guess(GuessitemChangeNotifier provider) {
     if (provider.isMatched) {
       provider.reset();
@@ -35,7 +97,9 @@ class _NumberPuzzlesState extends State<NumberPuzzles> {
     } else if (_validateInput()) {
       provider.addGuessItem(_ctlrs.map((ctl) => ctl.text).toList().join());
       _clearEmptyClickCount();
-      if (!provider.isMatched) {
+      if (provider.isMatched) {
+        _requestWinComment(provider);
+      } else {
         _reset();
       }
     } else {
@@ -275,6 +339,8 @@ $bText ${sl?.getText('resultCorrectValue') ?? 'numbers correct but in wrong posi
   void _reset() {
     _ctlrs.forEach((controller) => controller.text = '');
     _focusNodes[0].requestFocus();
+    _aiHint = '';
+    _aiComment = '';
   }
 
   bool _validateInput() {
@@ -463,9 +529,55 @@ $bText ${sl?.getText('resultCorrectValue') ?? 'numbers correct but in wrong posi
                     ),
                   ),
                 ),
+                if (AiService.instance.isReady &&
+                    !guessitemProvider.isMatched &&
+                    guessitemProvider.guessItems.isNotEmpty)
+                  IconButton(
+                    icon: _isHintLoading
+                        ? const SizedBox(
+                            width: 18,
+                            height: 18,
+                            child: CircularProgressIndicator(strokeWidth: 2))
+                        : const Icon(Icons.lightbulb_outline),
+                    onPressed:
+                        _isHintLoading ? null : () => _requestHint(guessitemProvider),
+                    tooltip: sl?.getText('aiHint') ?? 'Hint',
+                  ),
               ],
             ),
           ),
+          // AI hint display
+          if (_aiHint.isNotEmpty)
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+              color: colorScheme.tertiaryContainer.withValues(alpha: 0.3),
+              child: Row(
+                children: [
+                  Icon(Icons.lightbulb, size: 16, color: colorScheme.tertiary),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(_aiHint,
+                        style: TextStyle(
+                            fontSize: 13,
+                            color: colorScheme.onTertiaryContainer)),
+                  ),
+                  GestureDetector(
+                    onTap: () => setState(() => _aiHint = ''),
+                    child: Icon(Icons.close,
+                        size: 16, color: colorScheme.onTertiaryContainer),
+                  ),
+                ],
+              ),
+            ),
+          // AI win comment
+          if (guessitemProvider.isMatched && _aiComment.isNotEmpty)
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 4),
+              child: Text(_aiComment,
+                  style: TextStyle(
+                      fontSize: 13, color: colorScheme.onSurfaceVariant),
+                  textAlign: TextAlign.center),
+            ),
           // Guess history list
           Expanded(
             flex: 2,
