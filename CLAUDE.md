@@ -144,9 +144,11 @@ Material Design 3 with `ColorScheme`. The user picks one of 16 colors (`Colors.p
 - State machine: `uninitialized → loading → ready / error`
 - Two usage patterns: `completeStream(systemPrompt, userMessage)` for one-shot (NoteLanding assist), `createChatConversation()` for multi-turn (AiChat)
 - Multimodal: `completeMultimodal(systemPrompt, imagePath, userText)` for image analysis (non-streaming, returns Future<String>)
-- `sendMultimodalMessage` (SDK) is non-streaming only — no streaming for image input
-- `AiModelInfo.supportsVision` — Gemma 4 models support vision, Qwen3 models do not
-- `AiService.isVisionModel` — check before invoking image features; show switch prompt if false
+- Audio: `completeAudio(systemPrompt, audioPath, userText)` for audio transcription (non-streaming, returns Future<String>)
+- Audio/Vision multimodal must create temporary independent engines (with `audioBackend`/`visionBackend`), never use main engine. Audio needs WAV 16kHz mono format
+- `sendMultimodalMessage` (SDK) is non-streaming only — no streaming for image/audio input
+- `AiModelInfo.supportsVision` / `supportsAudio` — Gemma 4 models support both, Qwen3 models do not
+- `AiService.isVisionModel` / `isAudioModel` — check before invoking multimodal features; show switch prompt if false
 - GPU backend with automatic CPU fallback
 - Config keys in SQLite: `aiModelPath`, `aiBackend`
 - New config rows are added via `db.ensureConfig()` in `NoteApp._asyncInit()` (not only `_initSQLs`) for database migration safety
@@ -177,3 +179,6 @@ try {
 - **flutter analyze**: This project has many pre-existing `info` lint warnings (file_names, prefer_const, etc.) — only `error` level matters
 - **image_picker**: iOS needs `NSCameraUsageDescription` + `NSPhotoLibraryUsageDescription` in Info.plist; Android needs `<uses-permission android:name="android.permission.CAMERA" />` in manifest
 - **flutter_litert_lm multimodal API**: `conversation.sendMultimodalMessage(List<LiteLmContent>)` — non-streaming; `sendMessageStream(String)` — streaming but text-only
+- **flutter_litert_lm fork**: `plugins/flutter_litert_lm/` 是必要 fork — 升级 litertlm-android 到 0.11.0 并添加 `maxNumImages` 参数，修复 vision SIGSEGV。待上游 pub 包更新后可移除
+- **record package**: `record_linux` 与 `record_platform_interface` 版本不兼容会导致 Android build 失败。通过 `dependency_overrides` 中 `record_linux: ^1.3.0` 解决
+- **NoteAccessSqlite API**: 添加笔记用 `db.addNote(note)`；删除用 `db.deleteNoteItem(item)`；更新内容用 `db.updateNoteItemContent(id, text)`
