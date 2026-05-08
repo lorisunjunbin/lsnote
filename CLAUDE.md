@@ -153,6 +153,19 @@ Material Design 3 with `ColorScheme`. The user picks one of 16 colors (`Colors.p
 - Config keys in SQLite: `aiModelPath`, `aiBackend`
 - New config rows are added via `db.ensureConfig()` in `NoteApp._asyncInit()` (not only `_initSQLs`) for database migration safety
 
+### AI Prompt & Sampling 最佳实践（小模型防重复）
+
+小模型（Gemma E4B/E2B、Qwen3 0.6B）容易陷入重复输出循环。经验证有效的策略：
+
+- **轻量场景用 `completeStream`**（直接流式），不用 `completeStreamNoThink`（其 buffer 累积逻辑反而加剧重复）
+- **采样参数保持默认**：`temperature: 0.7, topK: 40, topP: 0.95` — 不要降低 topK/topP，过度限制候选 token 会导致循环
+- **SDK 无 repetitionPenalty**：`LiteLmSamplerConfig` 只有 temperature/topK/topP，无法在采样层面惩罚重复
+- **Prompt 需要角色设定 + 明确约束**：如 "You are a witty assistant..."、"NEVER repeat"、"Output ONLY the result"
+- **轻量场景不附加 contextInfo**（时间+语言长前缀），仅用极短的语言标记 `_lang`（"Reply in Simplified Chinese."）
+- **中重量级场景**（organize、chat 等输出较长）可保留完整 `$_ctx`，因为长输出不易循环
+- **`completeStreamNoThink` 保留给**需要过滤 `<think>` 标签的场景（Qwen3 模型）或需要 maxLength 强制截断的场景
+- **所有 prompt 集中在 `lib/service/AiPrompts.dart`** 统一管理
+
 ### AI Graceful Degradation (必须遵守)
 
 所有 AI 增强功能必须在模型未就绪时优雅降级，绝不影响正常 UI 交互：

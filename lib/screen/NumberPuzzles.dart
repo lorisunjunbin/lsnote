@@ -6,6 +6,7 @@ import 'package:provider/provider.dart';
 import '../model/GuessItem.dart';
 import '../i18n/SimpleLocalizations.dart';
 import '../changenotifier/GuessItemChangeNotifier.dart';
+import '../service/AiPrompts.dart';
 import '../service/AiService.dart';
 
 class NumberPuzzles extends StatefulWidget {
@@ -47,8 +48,8 @@ class _NumberPuzzlesState extends State<NumberPuzzles> {
     final buffer = StringBuffer();
     AiService.instance
         .completeStream(
-      'You are a fun companion for a 1A2B number guessing game. The secret is a 4-digit number with all unique digits (0-9). A = correct digit in correct position, B = correct digit in wrong position. Give a short, playful, cryptic hint (1 sentence max) based on the guess history. NEVER reveal the answer directly. ${AiService.instance.contextInfo}',
-      'Guess history:\n$history\nGive me a hint!',
+      AiPrompts.gameHint(),
+      history,
     )
         .listen(
       (token) {
@@ -77,8 +78,8 @@ class _NumberPuzzlesState extends State<NumberPuzzles> {
     final buffer = StringBuffer();
     AiService.instance
         .completeStream(
-      'You are a fun game companion. The player just won a 1A2B number guessing game. Give exactly 1 short, fun, encouraging sentence about their performance. Be creative and playful. ${AiService.instance.contextInfo}',
-      'I won in $guessCount guesses, took $totalSeconds seconds total.',
+      AiPrompts.gameWin(),
+      '$guessCount guesses, ${totalSeconds}s',
     )
         .listen(
       (token) {

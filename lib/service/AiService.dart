@@ -31,29 +31,46 @@ class AiModelInfo {
 
 class AiService {
   static final AiService instance = AiService._();
+
   AiService._();
 
   AiServiceState _state = AiServiceState.uninitialized;
+
   AiServiceState get state => _state;
 
   String _modelPath = '';
+
   String get modelPath => _modelPath;
 
   String _backend = 'gpu';
+
   String get backend => _backend;
 
   String _language = 'zh';
+
   String get language => _language;
 
   String get languageInstruction {
     return _language == 'zh'
-        ? 'You MUST respond in Chinese (简体中文).'
-        : 'You MUST respond in English.';
+        ? 'reply in Simplified Chinese,'
+        : 'reply in English,';
   }
 
   String get contextInfo {
     final now = DateTime.now();
-    return 'Current date and time: ${now.year}-${now.month.toString().padLeft(2, '0')}-${now.day.toString().padLeft(2, '0')} ${now.hour.toString().padLeft(2, '0')}:${now.minute.toString().padLeft(2, '0')}. $languageInstruction';
+    final timeOfDay = _getTimeOfDay(now.hour);
+    return 'Now is $timeOfDay of ${now.month.toString().padLeft(2, '0')}/${now.day.toString().padLeft(2, '0')}/${now.year}, $languageInstruction';
+  }
+
+  String _getTimeOfDay(int hour) {
+    if (hour < 6) return 'late night';
+    if (hour < 9) return 'early morning';
+    if (hour < 12) return 'morning';
+    if (hour < 14) return 'noon';
+    if (hour < 17) return 'afternoon';
+    if (hour < 19) return 'evening';
+    if (hour < 22) return 'night';
+    return 'late night';
   }
 
   Future<void> setLanguage(String lang) async {
@@ -63,6 +80,7 @@ class AiService {
 
   LiteLmEngine? _engine;
   String? _errorMessage;
+
   String? get errorMessage => _errorMessage;
 
   static const List<AiModelInfo> availableModels = [
@@ -197,8 +215,7 @@ class AiService {
       }
 
       final contentLength = response.contentLength;
-      final totalBytes =
-          contentLength > 0 ? contentLength + existingBytes : -1;
+      final totalBytes = contentLength > 0 ? contentLength + existingBytes : -1;
       int receivedBytes = existingBytes;
 
       final sink = tempFile.openWrite(
@@ -297,7 +314,8 @@ class AiService {
     }
   }
 
-  Stream<String> completeStream(String systemPrompt, String userMessage) async* {
+  Stream<String> completeStream(
+      String systemPrompt, String userMessage) async* {
     if (_engine == null || _state != AiServiceState.ready) {
       throw AiServiceException('AI engine not ready');
     }
@@ -320,6 +338,78 @@ class AiService {
     } finally {
       await conversation.dispose();
     }
+  }
+
+  Stream<String> completeStreamNoThink(String systemPrompt, String userMessage,
+      {double temperature = 0.3, int maxLength = 500}) async* {
+    if (_engine == null || _state != AiServiceState.ready) {
+      throw AiServiceException('AI engine not ready');
+    }
+
+    final isQwen = _modelPath.contains('qwen') || _modelPath.contains('Qwen');
+    final noThinkPrompt = isQwen ? '$systemPrompt\n/no_think' : systemPrompt;
+
+    final conversation = await _engine!.createConversation(
+      LiteLmConversationConfig(
+        systemInstruction: noThinkPrompt,
+        samplerConfig: LiteLmSamplerConfig(
+          temperature: temperature,
+          topK: 64,
+          topP: 0.95,
+        ),
+      ),
+    );
+
+    final buffer = StringBuffer();
+    bool inThink = false;
+
+    try {
+      await for (final delta in conversation.sendMessageStream(userMessage)) {
+        buffer.write(delta.text);
+        final text = buffer.toString();
+        if (!inThink && text.contains('<think>')) {
+          inThink = true;
+        }
+        if (inThink && text.contains('</think>')) {
+          final cleaned =
+              text.replaceAll(RegExp(r'<think>[\s\S]*?</think>'), '').trim();
+          buffer.clear();
+          buffer.write(cleaned);
+          inThink = false;
+          if (cleaned.length >= maxLength) {
+            yield cleaned.substring(0, maxLength);
+            break;
+          }
+          yield cleaned;
+        } else if (!inThink) {
+          final cleaned =
+              text.replaceAll(RegExp(r'<think>[\s\S]*$'), '').trim();
+          if (cleaned.length >= maxLength) {
+            yield cleaned.substring(0, maxLength);
+            break;
+          }
+          if (cleaned.isNotEmpty) {
+            yield cleaned;
+          }
+        }
+      }
+      if (inThink) {
+        final text = buffer.toString();
+        final cleaned =
+            text.replaceAll(RegExp(r'<think>[\s\S]*?(</think>)?'), '').trim();
+        if (cleaned.isNotEmpty) {
+          yield cleaned.length > maxLength
+              ? cleaned.substring(0, maxLength)
+              : cleaned;
+        }
+      }
+    } finally {
+      await conversation.dispose();
+    }
+  }
+
+  static String stripThinkingTags(String text) {
+    return text.replaceAll(RegExp(r'<think>[\s\S]*?</think>'), '').trim();
   }
 
   Future<String> completeMultimodal(
@@ -524,6 +614,7 @@ class AiService {
 
 class AiServiceException implements Exception {
   final String message;
+
   AiServiceException(this.message);
 
   @override

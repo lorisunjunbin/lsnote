@@ -17,6 +17,7 @@ import '../model/Note.dart';
 import 'Backup.dart';
 import 'NoteItem.dart';
 import '../NoteApp.dart';
+import '../service/AiPrompts.dart';
 import '../service/AiService.dart';
 import 'AiChat.dart';
 
@@ -122,7 +123,7 @@ class _NoteLandingState extends State<NoteLanding> {
     setState(() {});
   }
 
-  void _requestWelcome() {
+  void _requestWelcome() async {
     if (_welcomeRequested || !AiService.instance.isReady) return;
     _welcomeRequested = true;
 
@@ -137,13 +138,12 @@ class _NoteLandingState extends State<NoteLanding> {
 
     final buffer = StringBuffer();
     final now = DateTime.now();
-    final topics = ['productivity', 'creativity', 'coffee', 'weather', 'cats', 'space', 'food', 'music', 'sleep', 'coding', 'dreams', 'books'];
+    final topics = ['food', 'blue sky', 'coffee', 'cats', 'fresh air', 'food', 'music'];
     final topic = topics[now.millisecondsSinceEpoch % topics.length];
-    final dayOfWeek = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'][now.weekday - 1];
     AiService.instance
         .completeStream(
-      'You are a witty, humorous assistant embedded in a note-taking app called LSNOTE. Generate a single short funny/quirky greeting (1 sentence, under 20 words). Be creative, use wordplay or puns. NEVER repeat a previous greeting, always be fresh and different. Output ONLY the greeting, nothing else. ${AiService.instance.contextInfo}',
-      'Time: $timeOfDay, $dayOfWeek. Theme hint: $topic. Random: ${now.millisecondsSinceEpoch}. Greet me!',
+      AiPrompts.greeting(topic),
+      timeOfDay,
     )
         .listen(
       (token) {
@@ -309,8 +309,7 @@ class _NoteLandingState extends State<NoteLanding> {
     setState(() => _isTranscribing = true);
 
     try {
-      final systemPrompt =
-          '${AiService.instance.contextInfo} Transcribe the audio accurately. Output only the transcribed text, nothing else.';
+      final systemPrompt = AiPrompts.landingTranscribe();
       final transcription =
           await AiService.instance.completeAudio(systemPrompt, audioPath, null);
 
@@ -682,7 +681,7 @@ class _NoteLandingState extends State<NoteLanding> {
     final buffer = StringBuffer();
     AiService.instance
         .completeStream(
-      'You are a note organizing assistant. Take the user\'s messy input and organize it into a well-structured note with clear categories and bullet points. Keep all original information, just reorganize it logically. Do NOT add any preamble or explanation, just output the organized content directly. ${AiService.instance.contextInfo}',
+      AiPrompts.landingOrganize(),
       rawText,
     )
         .listen(
@@ -690,7 +689,7 @@ class _NoteLandingState extends State<NoteLanding> {
         buffer.write(token);
         if (mounted) {
           setState(() {
-            ctrl.text = buffer.toString();
+            ctrl.text = AiService.stripThinkingTags(buffer.toString());
             ctrl.selection = TextSelection.collapsed(offset: ctrl.text.length);
           });
         }
@@ -811,6 +810,7 @@ class _NoteLandingState extends State<NoteLanding> {
                               _currentColorIndex = index;
                             });
                             setState(() {});
+                            _showAiColorCompliment(color);
                           },
                           borderRadius: BorderRadius.circular(16),
                           child: AnimatedContainer(
@@ -863,6 +863,55 @@ class _NoteLandingState extends State<NoteLanding> {
         });
   }
 
+  void _showAiColorCompliment(Color color) async {
+    if (!AiService.instance.isReady) return;
+
+    final colorNames = {
+      Colors.red: 'Red/红色',
+      Colors.pink: 'Pink/粉色',
+      Colors.purple: 'Purple/紫色',
+      Colors.deepPurple: 'Deep Purple/深紫色',
+      Colors.indigo: 'Indigo/靛蓝色',
+      Colors.blue: 'Blue/蓝色',
+      Colors.lightBlue: 'Light Blue/浅蓝色',
+      Colors.cyan: 'Cyan/青色',
+      Colors.teal: 'Teal/青绿色',
+      Colors.green: 'Green/绿色',
+      Colors.lightGreen: 'Light Green/浅绿色',
+      Colors.lime: 'Lime/黄绿色',
+      Colors.yellow: 'Yellow/黄色',
+      Colors.amber: 'Amber/琥珀色',
+      Colors.orange: 'Orange/橙色',
+      Colors.deepOrange: 'Deep Orange/深橙色',
+    };
+    final colorName = colorNames[color] ?? color.toString();
+
+    final buffer = StringBuffer();
+    AiService.instance
+        .completeStream(
+          AiPrompts.colorCompliment(colorName),
+          colorName,
+        )
+        .listen(
+      (token) {
+        buffer.write(token);
+      },
+      onDone: () {
+        final text = buffer.toString().trim();
+        if (text.isNotEmpty && mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(text),
+              behavior: SnackBarBehavior.floating,
+              duration: const Duration(seconds: 3),
+            ),
+          );
+        }
+      },
+      onError: (_) {},
+    );
+  }
+
   Future<void> _showAiAssistSheet(
       Note item, SimpleLocalizations sl, ColorScheme colorScheme) async {
     final content = _ctrls['${item.id}cblt']?.value.text ?? item.content ?? '';
@@ -900,7 +949,8 @@ class _NoteLandingState extends State<NoteLanding> {
                 await for (final token
                     in AiService.instance.completeStream(systemPrompt, content)) {
                   setSheetState(() {
-                    aiResult = (aiResult ?? '') + token;
+                    aiResult = AiService.stripThinkingTags(
+                        (aiResult ?? '') + token);
                   });
                 }
               } catch (e) {
@@ -951,32 +1001,28 @@ class _NoteLandingState extends State<NoteLanding> {
                           Icons.summarize,
                           colorScheme,
                           isLoading,
-                          () => runAction(
-                              'Summarize the following text into concise bullet points. ${AiService.instance.contextInfo}'),
+                          () => runAction(AiPrompts.summarize()),
                         ),
                         _aiActionChip(
                           sl.getText('aiPolish') ?? 'Polish',
                           Icons.auto_fix_high,
                           colorScheme,
                           isLoading,
-                          () => runAction(
-                              'Improve the grammar and clarity of the following text. Keep the original meaning. ${AiService.instance.contextInfo}'),
+                          () => runAction(AiPrompts.improveGrammar()),
                         ),
                         _aiActionChip(
                           sl.getText('aiTranslate') ?? 'Translate',
                           Icons.translate,
                           colorScheme,
                           isLoading,
-                          () => runAction(
-                              'Translate the following text. If Chinese, translate to English; if English, translate to Chinese.'),
+                          () => runAction(AiPrompts.translate),
                         ),
                         _aiActionChip(
                           sl.getText('aiContinue') ?? 'Continue',
                           Icons.edit_note,
                           colorScheme,
                           isLoading,
-                          () => runAction(
-                              'Continue writing based on the following text. Match the style and topic. ${AiService.instance.contextInfo}'),
+                          () => runAction(AiPrompts.landingContinue()),
                         ),
                       ],
                     ),

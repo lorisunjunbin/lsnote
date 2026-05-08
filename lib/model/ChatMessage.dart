@@ -3,6 +3,7 @@ class ChatMessage {
   final String content;
   final String? imagePath;
   final String? audioPath;
+  final String? thinkingContent;
   final DateTime timestamp;
 
   ChatMessage({
@@ -10,6 +11,7 @@ class ChatMessage {
     required this.content,
     this.imagePath,
     this.audioPath,
+    this.thinkingContent,
     DateTime? timestamp,
   }) : timestamp = timestamp ?? DateTime.now();
 

@@ -5,6 +5,7 @@ import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_litert_lm/flutter_litert_lm.dart';
 import 'package:image_picker/image_picker.dart';
+import 'package:just_audio/just_audio.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:record/record.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -13,6 +14,7 @@ import 'package:wakelock_plus/wakelock_plus.dart';
 import '../i18n/SimpleLocalizations.dart';
 import '../model/ChatMessage.dart';
 import '../model/Note.dart';
+import '../service/AiPrompts.dart';
 import '../service/AiService.dart';
 import '../service/NoteAccessSqlite.dart';
 import '../utils/NavigationHelper.dart';
@@ -38,6 +40,9 @@ class _AiChatState extends State<AiChat> {
   bool _isRecording = false;
   int _recordingDuration = 0;
   Timer? _recordingTimer;
+  final AudioPlayer _audioPlayer = AudioPlayer();
+  String? _playingAudioPath;
+  final Map<String, bool> _expandedAudioTranscripts = {};
 
   @override
   void initState() {
@@ -59,6 +64,7 @@ class _AiChatState extends State<AiChat> {
   void dispose() {
     _recordingTimer?.cancel();
     _recorder.dispose();
+    _audioPlayer.dispose();
     _conversation?.dispose();
     _inputCtl.dispose();
     _scrollCtl.dispose();
@@ -67,10 +73,6 @@ class _AiChatState extends State<AiChat> {
 
   Future<void> _toggleRecording() async {
     if (!AiService.instance.isReady) return;
-    if (!AiService.instance.isAudioModel) {
-      _showAudioModelHint();
-      return;
-    }
 
     if (_isRecording) {
       _recordingTimer?.cancel();
@@ -104,15 +106,35 @@ class _AiChatState extends State<AiChat> {
     }
   }
 
+  void _toggleAudioPlayback(String audioPath) async {
+    if (_playingAudioPath == audioPath) {
+      await _audioPlayer.stop();
+      if (mounted) setState(() => _playingAudioPath = null);
+    } else {
+      try {
+        await _audioPlayer.setFilePath(audioPath);
+        setState(() => _playingAudioPath = audioPath);
+        _audioPlayer.play();
+        _audioPlayer.playerStateStream.listen((state) {
+          if (state.processingState == ProcessingState.completed && mounted) {
+            setState(() => _playingAudioPath = null);
+          }
+        });
+      } catch (_) {
+        if (mounted) setState(() => _playingAudioPath = null);
+      }
+    }
+  }
+
   Future<void> _sendAudioMessage(String audioPath) async {
     if (_isStreaming) return;
     if (!AiService.instance.isReady) return;
 
-    final sl = SimpleLocalizations.of(context)!;
+    final userMsgIndex = _messages.length;
     setState(() {
       _messages.add(ChatMessage(
         role: 'user',
-        content: sl.getText('aiVoiceMessage') ?? 'Voice Message',
+        content: '',
         audioPath: audioPath,
       ));
       _isStreaming = true;
@@ -123,17 +145,40 @@ class _AiChatState extends State<AiChat> {
     setState(() => _messages.add(assistantMsg));
 
     try {
-      final systemPrompt =
-          '${AiService.instance.contextInfo} You are a helpful assistant. Transcribe the audio accurately and respond to the user.';
       final response = await AiService.instance.completeAudio(
-        systemPrompt,
+        AiPrompts.chatAudio(),
         audioPath,
         null,
       );
+
+      String transcription = '';
+      String aiResponse = response;
+      if (response.contains('[Transcription]:')) {
+        final parts = response.split('\n\n');
+        if (parts.length >= 2) {
+          transcription = parts[0].replaceFirst('[Transcription]:', '').trim();
+          aiResponse = parts.sublist(1).join('\n\n').trim();
+        } else {
+          transcription = response.replaceFirst('[Transcription]:', '').trim();
+          aiResponse = '';
+        }
+      }
+
+      if (transcription.isNotEmpty && mounted) {
+        setState(() {
+          _messages[userMsgIndex] = ChatMessage(
+            role: 'user',
+            content: transcription,
+            audioPath: audioPath,
+            timestamp: _messages[userMsgIndex].timestamp,
+          );
+        });
+      }
+
       setState(() {
         _messages[_messages.length - 1] = ChatMessage(
           role: 'assistant',
-          content: response,
+          content: aiResponse.isNotEmpty ? aiResponse : response,
           timestamp: assistantMsg.timestamp,
         );
       });
@@ -151,32 +196,6 @@ class _AiChatState extends State<AiChat> {
     _scrollToBottom();
   }
 
-  void _showAudioModelHint() {
-    final sl = SimpleLocalizations.of(context)!;
-    final colorScheme = Theme.of(context).colorScheme;
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(
-          sl.getText('aiAudioNotSupported') ??
-              'Current model does not support audio. Switch to an audio model?',
-          style: TextStyle(color: colorScheme.onPrimaryContainer),
-        ),
-        backgroundColor: colorScheme.primaryContainer,
-        behavior: SnackBarBehavior.floating,
-        action: SnackBarAction(
-          label: sl.getText('aiSwitchModel') ?? 'Switch',
-          onPressed: () async {
-            final audioModel = AiService.availableModels.firstWhere(
-                (m) => m.supportsAudio,
-                orElse: () => AiService.availableModels[0]);
-            await for (final _ in AiService.instance.switchModel(audioModel)) {}
-            if (mounted) setState(() {});
-          },
-        ),
-      ),
-    );
-  }
-
   Future<void> _sendMessage() async {
     final text = _inputCtl.text.trim();
     final imagePath = _pendingImagePath;
@@ -188,8 +207,8 @@ class _AiChatState extends State<AiChat> {
     try {
       _conversation ??= await AiService.instance.createChatConversation(
         systemInstruction: _attachedNote != null
-            ? 'The user has shared a note for context:\nTitle: ${_attachedNote!.title}\nContent: ${_attachedNote!.content}\n\nHelp the user with questions about this note.'
-            : null,
+            ? '${AiService.instance.contextInfo} The user has shared a note for context:\nTitle: ${_attachedNote!.title}\nContent: ${_attachedNote!.content}\n\nHelp the user with questions about this note.'
+            : '${AiService.instance.contextInfo} You are a helpful assistant.',
       );
     } catch (e) {
       if (mounted) {
@@ -221,10 +240,8 @@ class _AiChatState extends State<AiChat> {
     if (imagePath != null) {
       try {
         final userText = text.isNotEmpty ? text : null;
-        final systemPrompt =
-            '${AiService.instance.contextInfo} You are a helpful assistant. Analyze the image and respond to the user.';
         final response = await AiService.instance.completeMultimodal(
-          systemPrompt,
+          AiPrompts.chatImage(),
           imagePath,
           userText,
         );
@@ -251,10 +268,15 @@ class _AiChatState extends State<AiChat> {
         final buffer = StringBuffer();
         await for (final token in _conversation!.sendMessageStream(text)) {
           buffer.write(token.text);
+          final raw = buffer.toString();
+          final parsed = _parseThinking(raw);
           setState(() {
             _messages[_messages.length - 1] = ChatMessage(
               role: 'assistant',
-              content: buffer.toString(),
+              content: parsed['content']!,
+              thinkingContent: parsed['thinking']!.isEmpty
+                  ? null
+                  : parsed['thinking'],
               timestamp: assistantMsg.timestamp,
             );
           });
@@ -287,12 +309,25 @@ class _AiChatState extends State<AiChat> {
     });
   }
 
+  Map<String, String> _parseThinking(String raw) {
+    final thinkStart = raw.indexOf('<think>');
+    if (thinkStart == -1) {
+      return {'thinking': '', 'content': raw};
+    }
+    final thinkEnd = raw.indexOf('</think>');
+    if (thinkEnd == -1) {
+      final thinking = raw.substring(thinkStart + 7);
+      final before = raw.substring(0, thinkStart).trim();
+      return {'thinking': thinking, 'content': before};
+    }
+    final thinking = raw.substring(thinkStart + 7, thinkEnd);
+    final content = raw.substring(0, thinkStart).trim() +
+        raw.substring(thinkEnd + 8).trim();
+    return {'thinking': thinking, 'content': content.trim()};
+  }
+
   void _pickImage() async {
     if (!AiService.instance.isReady) return;
-    if (!AiService.instance.isVisionModel) {
-      _showVisionModelHint();
-      return;
-    }
     final sl = SimpleLocalizations.of(context)!;
     final source = await showModalBottomSheet<ImageSource>(
       context: context,
@@ -322,32 +357,6 @@ class _AiChatState extends State<AiChat> {
     if (image == null) return;
 
     setState(() => _pendingImagePath = image.path);
-  }
-
-  void _showVisionModelHint() {
-    final sl = SimpleLocalizations.of(context)!;
-    final colorScheme = Theme.of(context).colorScheme;
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(
-          sl.getText('aiVisionNotSupported') ??
-              'Current model does not support images. Switch to a vision model?',
-          style: TextStyle(color: colorScheme.onPrimaryContainer),
-        ),
-        backgroundColor: colorScheme.primaryContainer,
-        behavior: SnackBarBehavior.floating,
-        action: SnackBarAction(
-          label: sl.getText('aiSwitchModel') ?? 'Switch',
-          onPressed: () async {
-            final visionModel = AiService.availableModels.firstWhere(
-                (m) => m.supportsVision,
-                orElse: () => AiService.availableModels[0]);
-            await for (final _ in AiService.instance.switchModel(visionModel)) {}
-            if (mounted) setState(() {});
-          },
-        ),
-      ),
-    );
   }
 
   void _clearChat() {
@@ -1002,12 +1011,13 @@ class _AiChatState extends State<AiChat> {
       ),
       child: Scaffold(
         appBar: AppBar(
+          titleSpacing: 0,
           leading: IconButton(
             icon: const Icon(Icons.arrow_back),
             onPressed: () =>
                 NavigationHelper.replaceTo(context, NoteLanding.routeName),
           ),
-          title: Text(sl.getText('aiChat') ?? 'AI'),
+          title: Text(sl.getText('aiChat') ?? 'AI Chat'),
           actions: [
             IconButton(
               icon: Icon(
@@ -1112,20 +1122,44 @@ class _AiChatState extends State<AiChat> {
                         mainAxisAlignment: MainAxisAlignment.center,
                         children: [
                           Icon(Icons.auto_awesome,
-                              size: 48,
-                              color: colorScheme.onSurfaceVariant),
+                              size: 56,
+                              color: colorScheme.primary.withValues(alpha: 0.4)),
                           const SizedBox(height: 16),
                           Text(
                             sl.getText('aiInputHint') ?? 'Ask anything...',
                             style: TextStyle(
-                                color: colorScheme.onSurfaceVariant),
+                              fontSize: 16,
+                              color: colorScheme.onSurfaceVariant,
+                              fontWeight: FontWeight.w500,
+                            ),
+                          ),
+                          const SizedBox(height: 24),
+                          Wrap(
+                            spacing: 8,
+                            runSpacing: 8,
+                            alignment: WrapAlignment.center,
+                            children: [
+                              _buildSuggestionChip(
+                                  sl.getText('aiSummarize') ?? 'Summarize',
+                                  Icons.summarize,
+                                  colorScheme),
+                              _buildSuggestionChip(
+                                  sl.getText('aiTranslate') ?? 'Translate',
+                                  Icons.translate,
+                                  colorScheme),
+                              _buildSuggestionChip(
+                                  sl.getText('aiOrganize') ?? 'Organize',
+                                  Icons.auto_fix_high,
+                                  colorScheme),
+                            ],
                           ),
                         ],
                       ),
                     )
                   : ListView.builder(
                       controller: _scrollCtl,
-                      padding: const EdgeInsets.all(16),
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 8, vertical: 12),
                       itemCount: _messages.length,
                       itemBuilder: (ctx, i) =>
                           _buildMessageBubble(_messages[i], colorScheme),
@@ -1138,227 +1172,460 @@ class _AiChatState extends State<AiChat> {
     );
   }
 
+  Widget _buildSuggestionChip(String label, IconData icon, ColorScheme colorScheme) {
+    return ActionChip(
+      avatar: Icon(icon, size: 16),
+      label: Text(label, style: const TextStyle(fontSize: 12)),
+      backgroundColor: colorScheme.surfaceContainerLow,
+      side: BorderSide(color: colorScheme.outlineVariant),
+      onPressed: () => _inputCtl.text = label,
+    );
+  }
+
   Widget _buildMessageBubble(ChatMessage msg, ColorScheme colorScheme) {
     final isUser = msg.role == 'user';
-    final isThinking = !isUser && msg.content.isEmpty && _isStreaming;
+    final isThinking = !isUser &&
+        msg.content.isEmpty &&
+        msg.thinkingContent == null &&
+        _isStreaming;
     final sl = SimpleLocalizations.of(context)!;
 
-    return Align(
-      alignment: isUser ? Alignment.centerRight : Alignment.centerLeft,
-      child: Container(
-        constraints:
-            BoxConstraints(maxWidth: MediaQuery.of(context).size.width * 0.78),
-        margin: const EdgeInsets.only(bottom: 12),
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-        decoration: BoxDecoration(
-          color: isUser
-              ? colorScheme.primary
-              : colorScheme.surfaceContainerHighest,
-          borderRadius: BorderRadius.circular(16),
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 4),
+      child: Row(
+        mainAxisAlignment:
+            isUser ? MainAxisAlignment.end : MainAxisAlignment.start,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          if (!isUser) ...[
+            CircleAvatar(
+              radius: 14,
+              backgroundColor: colorScheme.primaryContainer,
+              child: Icon(Icons.auto_awesome,
+                  size: 14, color: colorScheme.onPrimaryContainer),
+            ),
+            const SizedBox(width: 8),
+          ],
+          Flexible(
+            child: Card(
+              elevation: 0,
+              color: isUser
+                  ? colorScheme.primaryContainer
+                  : colorScheme.surfaceContainerLow,
+              shape: RoundedRectangleBorder(
+                side: isUser
+                    ? BorderSide.none
+                    : BorderSide(
+                        color: colorScheme.primary.withValues(alpha: 0.55),
+                        width: 0.35),
+                borderRadius: BorderRadius.only(
+                  topLeft: const Radius.circular(16),
+                  topRight: const Radius.circular(16),
+                  bottomLeft: Radius.circular(isUser ? 16 : 4),
+                  bottomRight: Radius.circular(isUser ? 4 : 16),
+                ),
+              ),
+              child: Padding(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    if (msg.audioPath != null) ...[
+                      GestureDetector(
+                        onTap: () => _toggleAudioPlayback(msg.audioPath!),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(
+                              _playingAudioPath == msg.audioPath
+                                  ? Icons.stop_circle
+                                  : Icons.play_circle,
+                              size: 24,
+                              color: isUser
+                                  ? colorScheme.onPrimaryContainer
+                                  : colorScheme.primary,
+                            ),
+                            const SizedBox(width: 6),
+                            Text(
+                              sl.getText('aiVoiceMessage') ?? 'Voice Message',
+                              style: TextStyle(
+                                fontSize: 12,
+                                fontStyle: FontStyle.italic,
+                                color: isUser
+                                    ? colorScheme.onPrimaryContainer
+                                        .withValues(alpha: 0.8)
+                                    : colorScheme.onSurface
+                                        .withValues(alpha: 0.7),
+                              ),
+                            ),
+                            if (isUser && msg.content.isNotEmpty) ...[
+                              const SizedBox(width: 8),
+                              GestureDetector(
+                                onTap: () => setState(() {
+                                  _expandedAudioTranscripts[msg.audioPath!] =
+                                      !(_expandedAudioTranscripts[msg.audioPath!] ?? false);
+                                }),
+                                child: Icon(
+                                  (_expandedAudioTranscripts[msg.audioPath!] ?? false)
+                                      ? Icons.visibility_off
+                                      : Icons.visibility,
+                                  size: 16,
+                                  color: isUser
+                                      ? colorScheme.onPrimaryContainer.withValues(alpha: 0.7)
+                                      : colorScheme.primary,
+                                ),
+                              ),
+                            ],
+                          ],
+                        ),
+                      ),
+                      if (isUser &&
+                          msg.content.isNotEmpty &&
+                          (_expandedAudioTranscripts[msg.audioPath!] ?? false)) ...[
+                        const SizedBox(height: 6),
+                        SelectableText(
+                          msg.content,
+                          style: TextStyle(
+                            fontSize: 13,
+                            color: colorScheme.onPrimaryContainer.withValues(alpha: 0.85),
+                            height: 1.3,
+                          ),
+                        ),
+                      ] else if (!isUser && msg.content.isNotEmpty) ...[
+                        const SizedBox(height: 8),
+                      ],
+                    ],
+                    if (msg.imagePath != null) ...[
+                      _buildTappableImage(msg, colorScheme),
+                      if (msg.content.isNotEmpty) const SizedBox(height: 8),
+                    ],
+                    if (isThinking)
+                      _TypingDots(color: colorScheme.onSurfaceVariant)
+                    else ...[
+                      if (msg.thinkingContent != null &&
+                          msg.thinkingContent!.isNotEmpty) ...[
+                        _buildThinkingSection(
+                            msg.thinkingContent!, colorScheme),
+                        if (msg.content.isNotEmpty)
+                          const SizedBox(height: 8),
+                      ],
+                      if (msg.content.isEmpty && msg.thinkingContent != null && _isStreaming)
+                        _TypingDots(color: colorScheme.onSurfaceVariant)
+                      else if (msg.content.isNotEmpty && !(isUser && msg.audioPath != null))
+                        SelectableText(
+                          msg.content,
+                          style: TextStyle(
+                            color: isUser
+                                ? colorScheme.onPrimaryContainer
+                                : colorScheme.onSurface,
+                            fontSize: 14,
+                            height: 1.4,
+                          ),
+                        ),
+                    ],
+                    if (msg.content.isNotEmpty) ...[
+                      const SizedBox(height: 4),
+                      Text(
+                        '${msg.timestamp.hour.toString().padLeft(2, '0')}:${msg.timestamp.minute.toString().padLeft(2, '0')}',
+                        style: TextStyle(
+                          fontSize: 10,
+                          color: (isUser
+                                  ? colorScheme.onPrimaryContainer
+                                  : colorScheme.onSurfaceVariant)
+                              .withValues(alpha: 0.5),
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+            ),
+          ),
+          if (isUser) ...[
+            const SizedBox(width: 8),
+            CircleAvatar(
+              radius: 14,
+              backgroundColor: colorScheme.tertiaryContainer,
+              child: Icon(Icons.person,
+                  size: 14, color: colorScheme.onTertiaryContainer),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Widget _buildThinkingSection(String thinking, ColorScheme colorScheme) {
+    return Container(
+      padding: const EdgeInsets.all(8),
+      decoration: BoxDecoration(
+        color: colorScheme.surfaceContainerHighest.withValues(alpha: 0.5),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(
+          color: colorScheme.outlineVariant.withValues(alpha: 0.5),
+          width: 0.5,
         ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
+      ),
+      child: Theme(
+        data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
+        child: ExpansionTile(
+          tilePadding: EdgeInsets.zero,
+          childrenPadding: const EdgeInsets.only(top: 4),
+          dense: true,
+          initiallyExpanded: false,
+          leading: Icon(Icons.psychology,
+              size: 14, color: colorScheme.onSurfaceVariant),
+          title: Text(
+            'Thinking...',
+            style: TextStyle(
+              fontSize: 11,
+              color: colorScheme.onSurfaceVariant,
+              fontStyle: FontStyle.italic,
+            ),
+          ),
           children: [
-            if (msg.audioPath != null) ...[
-              Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Icon(Icons.mic,
-                      size: 16,
-                      color: isUser
-                          ? colorScheme.onPrimary
-                          : colorScheme.onSurface),
-                  const SizedBox(width: 6),
-                  Text(
-                    sl.getText('aiVoiceMessage') ?? 'Voice Message',
-                    style: TextStyle(
-                      fontSize: 12,
-                      fontStyle: FontStyle.italic,
-                      color: isUser
-                          ? colorScheme.onPrimary.withValues(alpha: 0.8)
-                          : colorScheme.onSurface.withValues(alpha: 0.7),
-                    ),
-                  ),
-                ],
+            SelectableText(
+              thinking,
+              style: TextStyle(
+                fontSize: 12,
+                color: colorScheme.onSurfaceVariant,
+                height: 1.3,
               ),
-              if (msg.content.isNotEmpty) const SizedBox(height: 8),
-            ],
-            if (msg.imagePath != null) ...[
-              ClipRRect(
-                borderRadius: BorderRadius.circular(8),
-                child: Image.file(
-                  File(msg.imagePath!),
-                  width: 200,
-                  fit: BoxFit.cover,
-                ),
-              ),
-              if (msg.content.isNotEmpty) const SizedBox(height: 8),
-            ],
-            if (isThinking)
-              Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  SizedBox(
-                    width: 12,
-                    height: 12,
-                    child: CircularProgressIndicator(
-                      strokeWidth: 2,
-                      color: colorScheme.onSurfaceVariant,
-                    ),
-                  ),
-                  const SizedBox(width: 8),
-                  Text(
-                    sl.getText('aiThinking') ?? 'Thinking...',
-                    style: TextStyle(
-                      color: colorScheme.onSurfaceVariant,
-                      fontSize: 13,
-                      fontStyle: FontStyle.italic,
-                    ),
-                  ),
-                ],
-              )
-            else if (msg.content.isNotEmpty)
-              SelectableText(
-                msg.content,
-                style: TextStyle(
-                  color:
-                      isUser ? colorScheme.onPrimary : colorScheme.onSurface,
-                  fontSize: 14,
-                  height: 1.4,
-                ),
-              ),
+            ),
           ],
         ),
       ),
     );
   }
 
-  Widget _buildInputBar(ColorScheme colorScheme, SimpleLocalizations sl) {
-    return Column(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        if (_pendingImagePath != null)
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
-            child: Row(
-              children: [
-                ClipRRect(
-                  borderRadius: BorderRadius.circular(8),
-                  child: Image.file(
-                    File(_pendingImagePath!),
-                    width: 60,
-                    height: 60,
-                    fit: BoxFit.cover,
-                  ),
+  Widget _buildTappableImage(ChatMessage msg, ColorScheme colorScheme) {
+    return GestureDetector(
+      onTap: () {
+        if (!_isStreaming &&
+            AiService.instance.isReady &&
+            AiService.instance.isVisionModel) {
+          setState(() => _pendingImagePath = msg.imagePath);
+        }
+      },
+      child: Stack(
+        children: [
+          ClipRRect(
+            borderRadius: BorderRadius.circular(8),
+            child: Image.file(File(msg.imagePath!), width: 200, fit: BoxFit.cover),
+          ),
+          if (AiService.instance.isVisionModel)
+            Positioned(
+              right: 6,
+              bottom: 6,
+              child: Container(
+                padding: const EdgeInsets.all(4),
+                decoration: BoxDecoration(
+                  color: colorScheme.surface.withValues(alpha: 0.85),
+                  borderRadius: BorderRadius.circular(12),
                 ),
-                const Spacer(),
-                IconButton(
-                  icon: Icon(Icons.close,
-                      size: 18, color: colorScheme.onSurfaceVariant),
-                  onPressed: () =>
-                      setState(() => _pendingImagePath = null),
+                child:
+                    Icon(Icons.refresh, size: 14, color: colorScheme.primary),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildInputBar(ColorScheme colorScheme, SimpleLocalizations sl) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+      decoration: BoxDecoration(
+        color: colorScheme.surface,
+        boxShadow: [
+          BoxShadow(
+            color: colorScheme.shadow.withValues(alpha: 0.06),
+            blurRadius: 8,
+            offset: const Offset(0, -2),
+          ),
+        ],
+      ),
+      child: SafeArea(
+        top: false,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            if (_pendingImagePath != null)
+              Padding(
+                padding: const EdgeInsets.only(bottom: 8),
+                child: Row(
+                  children: [
+                    ClipRRect(
+                      borderRadius: BorderRadius.circular(12),
+                      child: Image.file(File(_pendingImagePath!),
+                          width: 120, height: 90, fit: BoxFit.cover),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Text(
+                        sl.getText('aiImageReady') ?? 'Ask about this image...',
+                        style: TextStyle(
+                            fontSize: 12,
+                            color: colorScheme.onSurfaceVariant),
+                      ),
+                    ),
+                    IconButton(
+                      icon: Icon(Icons.close,
+                          size: 20, color: colorScheme.onSurfaceVariant),
+                      onPressed: () =>
+                          setState(() => _pendingImagePath = null),
+                    ),
+                  ],
+                ),
+              ),
+            Row(
+              children: [
+                if (AiService.instance.isReady &&
+                    AiService.instance.isVisionModel)
+                  IconButton(
+                    onPressed: _isStreaming ? null : _pickImage,
+                    icon: Icon(Icons.image, color: colorScheme.primary),
+                  ),
+                if (_isRecording)
+                  Expanded(
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 16, vertical: 10),
+                      decoration: BoxDecoration(
+                        color: colorScheme.errorContainer,
+                        borderRadius: BorderRadius.circular(24),
+                      ),
+                      child: Row(
+                        children: [
+                          Icon(Icons.fiber_manual_record,
+                              size: 12, color: Colors.red),
+                          const SizedBox(width: 8),
+                          Text(
+                            '${_recordingDuration}s',
+                            style: TextStyle(
+                              color: colorScheme.onErrorContainer,
+                              fontSize: 14,
+                            ),
+                          ),
+                          const Spacer(),
+                          Text(
+                            sl.getText('aiRecording') ?? 'Recording...',
+                            style: TextStyle(
+                              color: colorScheme.onErrorContainer,
+                              fontSize: 12,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  )
+                else
+                  Expanded(
+                    child: TextField(
+                      controller: _inputCtl,
+                      maxLines: 4,
+                      minLines: 1,
+                      textInputAction: TextInputAction.send,
+                      onSubmitted: (_) => _sendMessage(),
+                      decoration: InputDecoration(
+                        hintText:
+                            sl.getText('aiInputHint') ?? 'Ask anything...',
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(24),
+                          borderSide: BorderSide.none,
+                        ),
+                        filled: true,
+                        fillColor: colorScheme.surfaceContainerHighest,
+                        contentPadding: const EdgeInsets.symmetric(
+                            horizontal: 16, vertical: 10),
+                      ),
+                    ),
+                  ),
+                const SizedBox(width: 4),
+                if (AiService.instance.isReady &&
+                    AiService.instance.isAudioModel)
+                  IconButton(
+                    onPressed: _isStreaming ? null : _toggleRecording,
+                    icon: Icon(
+                      _isRecording ? Icons.stop : Icons.mic,
+                      color: _isRecording ? Colors.red : colorScheme.primary,
+                    ),
+                  ),
+                FloatingActionButton.small(
+                  heroTag: 'chatSend',
+                  onPressed: (_isStreaming ||
+                          !AiService.instance.isReady ||
+                          _isRecording)
+                      ? null
+                      : _sendMessage,
+                  elevation: 2,
+                  child: _isStreaming
+                      ? SizedBox(
+                          width: 18,
+                          height: 18,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                            color: colorScheme.onPrimary,
+                          ),
+                        )
+                      : const Icon(Icons.send, size: 18),
                 ),
               ],
             ),
-          ),
-        Container(
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-          decoration: BoxDecoration(
-            color: colorScheme.surface,
-            border: Border(
-              top: BorderSide(color: colorScheme.outlineVariant, width: 0.5),
-            ),
-          ),
-          child: Row(
-            children: [
-              IconButton(
-                onPressed: (_isStreaming || !AiService.instance.isReady)
-                    ? null
-                    : _pickImage,
-                icon: Icon(Icons.image, color: colorScheme.primary),
-              ),
-              if (_isRecording)
-                Expanded(
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(
-                        horizontal: 16, vertical: 10),
-                    decoration: BoxDecoration(
-                      color: colorScheme.errorContainer,
-                      borderRadius: BorderRadius.circular(24),
-                    ),
-                    child: Row(
-                      children: [
-                        Icon(Icons.fiber_manual_record,
-                            size: 12, color: Colors.red),
-                        const SizedBox(width: 8),
-                        Text(
-                          '${_recordingDuration}s',
-                          style: TextStyle(
-                            color: colorScheme.onErrorContainer,
-                            fontSize: 14,
-                          ),
-                        ),
-                        const Spacer(),
-                        Text(
-                          sl.getText('aiRecording') ?? 'Recording...',
-                          style: TextStyle(
-                            color: colorScheme.onErrorContainer,
-                            fontSize: 12,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                )
-              else
-                Expanded(
-                  child: TextField(
-                    controller: _inputCtl,
-                    maxLines: 4,
-                    minLines: 1,
-                    textInputAction: TextInputAction.send,
-                    onSubmitted: (_) => _sendMessage(),
-                    decoration: InputDecoration(
-                      hintText: sl.getText('aiInputHint') ?? 'Ask anything...',
-                      border: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(24),
-                        borderSide: BorderSide.none,
-                      ),
-                      filled: true,
-                      fillColor: colorScheme.surfaceContainerHighest,
-                      contentPadding: const EdgeInsets.symmetric(
-                          horizontal: 16, vertical: 10),
-                    ),
-                  ),
-                ),
-              const SizedBox(width: 8),
-              if (AiService.instance.isReady && AiService.instance.isAudioModel)
-                IconButton(
-                  onPressed: _isStreaming ? null : _toggleRecording,
-                  icon: Icon(
-                    _isRecording ? Icons.stop : Icons.mic,
-                    color: _isRecording ? Colors.red : colorScheme.primary,
-                  ),
-                ),
-              IconButton(
-                onPressed: (_isStreaming || !AiService.instance.isReady || _isRecording)
-                    ? null
-                    : _sendMessage,
-                icon: _isStreaming
-                    ? SizedBox(
-                        width: 20,
-                        height: 20,
-                        child: CircularProgressIndicator(
-                          strokeWidth: 2,
-                          color: colorScheme.primary,
-                        ),
-                      )
-                    : Icon(Icons.send, color: colorScheme.primary),
-              ),
-            ],
-          ),
+          ],
         ),
-      ],
+      ),
+    );
+  }
+}
+
+class _TypingDots extends StatefulWidget {
+  final Color color;
+  const _TypingDots({required this.color});
+  @override
+  State<_TypingDots> createState() => _TypingDotsState();
+}
+
+class _TypingDotsState extends State<_TypingDots>
+    with SingleTickerProviderStateMixin {
+  late AnimationController _ctrl;
+
+  @override
+  void initState() {
+    super.initState();
+    _ctrl = AnimationController(
+        vsync: this, duration: const Duration(milliseconds: 1200))
+      ..repeat();
+  }
+
+  @override
+  void dispose() {
+    _ctrl.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedBuilder(
+      animation: _ctrl,
+      builder: (_, __) => Row(
+        mainAxisSize: MainAxisSize.min,
+        children: List.generate(3, (i) {
+          final offset = i * 0.33;
+          final t = ((_ctrl.value + offset) % 1.0);
+          final scale = 0.5 + 0.5 * (t < 0.5 ? t * 2 : (1.0 - t) * 2);
+          return Container(
+            margin: const EdgeInsets.symmetric(horizontal: 3),
+            width: 8,
+            height: 8,
+            decoration: BoxDecoration(
+              color: widget.color.withValues(alpha: scale),
+              shape: BoxShape.circle,
+            ),
+          );
+        }),
+      ),
     );
   }
 }

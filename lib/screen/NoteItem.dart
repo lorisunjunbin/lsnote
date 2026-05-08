@@ -1,11 +1,15 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/scheduler.dart';
 import 'package:image_picker/image_picker.dart';
+import 'package:just_audio/just_audio.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:record/record.dart';
 
 import '../i18n/SimpleLocalizations.dart';
 import '../model/Note.dart';
+import '../service/AiPrompts.dart';
 import '../service/AiService.dart';
 import '../service/NoteAccessSqlite.dart';
 import '../utils/NavigationHelper.dart';
@@ -31,6 +35,10 @@ class _NoteItemState extends State<NoteItem>
   int _recordingDuration = 0;
   final AudioRecorder _recorder = AudioRecorder();
   String? _recordingPath;
+  String? _cachedImagePath;
+  String? _lastRecordingPath;
+  final AudioPlayer _audioPlayer = AudioPlayer();
+  bool _isPlaying = false;
 
   @override
   void initState() {
@@ -75,6 +83,7 @@ class _NoteItemState extends State<NoteItem>
   @override
   void dispose() {
     _recorder.dispose();
+    _audioPlayer.dispose();
     _contentCtl.removeListener(_onContentChanged);
     _contentCtl.dispose();
     _titleCtl.dispose();
@@ -363,33 +372,110 @@ class _NoteItemState extends State<NoteItem>
               _buildAiChip(sl, 'aiPolish', Icons.brush, _polishContent),
               _buildAiChip(sl, 'aiContinue', Icons.edit_note, _continueContent),
               _buildAiChip(sl, 'aiTranslate', Icons.translate, _translateContent),
-              ActionChip(
-                avatar: _isAiProcessing
-                    ? const SizedBox(
-                        width: 14, height: 14,
-                        child: CircularProgressIndicator(strokeWidth: 2))
-                    : const Icon(Icons.photo_camera, size: 14),
-                label: Text(sl.getText('aiPhotoToNote') ?? 'Photo to Note',
-                    style: const TextStyle(fontSize: 11)),
-                onPressed: _isAiProcessing ? null : _photoToNote,
-              ),
-              ActionChip(
-                avatar: _isRecording
-                    ? const Icon(Icons.stop, size: 14, color: Colors.red)
-                    : (_isAiProcessing
-                        ? const SizedBox(
-                            width: 14, height: 14,
-                            child: CircularProgressIndicator(strokeWidth: 2))
-                        : const Icon(Icons.mic, size: 14)),
-                label: Text(
-                    _isRecording
-                        ? '${_recordingDuration}s'
-                        : (sl.getText('aiVoiceToNote') ?? 'Voice to Note'),
-                    style: const TextStyle(fontSize: 11)),
-                onPressed: _isAiProcessing ? null : _toggleRecording,
+              if (AiService.instance.isVisionModel)
+                ActionChip(
+                  avatar: _isAiProcessing
+                      ? const SizedBox(
+                          width: 14, height: 14,
+                          child: CircularProgressIndicator(strokeWidth: 2))
+                      : const Icon(Icons.photo_camera, size: 14),
+                  label: Text(sl.getText('aiPhotoToNote') ?? 'Photo to Note',
+                      style: const TextStyle(fontSize: 11)),
+                  onPressed: _isAiProcessing ? null : _photoToNote,
+                ),
+              if (AiService.instance.isAudioModel)
+                ActionChip(
+                  avatar: _isRecording
+                      ? const Icon(Icons.stop, size: 14, color: Colors.red)
+                      : (_isAiProcessing
+                          ? const SizedBox(
+                              width: 14, height: 14,
+                              child: CircularProgressIndicator(strokeWidth: 2))
+                          : const Icon(Icons.mic, size: 14)),
+                  label: Text(
+                      _isRecording
+                          ? '${_recordingDuration}s'
+                          : (sl.getText('aiVoiceToNote') ?? 'Voice to Note'),
+                      style: const TextStyle(fontSize: 11)),
+                  onPressed: _isAiProcessing ? null : _toggleRecording,
               ),
             ],
           ),
+          if (_cachedImagePath != null) ...[
+            const SizedBox(height: 8),
+            Container(
+              padding: const EdgeInsets.all(8),
+              decoration: BoxDecoration(
+                color: colorScheme.surfaceContainerLow,
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: colorScheme.outlineVariant, width: 0.5),
+              ),
+              child: Row(
+                children: [
+                  ClipRRect(
+                    borderRadius: BorderRadius.circular(8),
+                    child: Image.file(File(_cachedImagePath!), width: 56, height: 56, fit: BoxFit.cover),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Text(sl.getText('aiPhotoToNote') ?? 'Photo to Note',
+                        style: TextStyle(fontSize: 12, color: colorScheme.onSurfaceVariant)),
+                  ),
+                  ActionChip(
+                    avatar: _isAiProcessing
+                        ? const SizedBox(width: 14, height: 14, child: CircularProgressIndicator(strokeWidth: 2))
+                        : const Icon(Icons.refresh, size: 14),
+                    label: Text(sl.getText('aiReanalyze') ?? 'Re-analyze', style: const TextStyle(fontSize: 11)),
+                    onPressed: _isAiProcessing ? null : _showReanalyzePrompt,
+                  ),
+                  IconButton(
+                    icon: const Icon(Icons.close, size: 18),
+                    onPressed: () => setState(() => _cachedImagePath = null),
+                  ),
+                ],
+              ),
+            ),
+          ],
+          if (_lastRecordingPath != null) ...[
+            const SizedBox(height: 8),
+            Container(
+              padding: const EdgeInsets.all(8),
+              decoration: BoxDecoration(
+                color: colorScheme.surfaceContainerLow,
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: colorScheme.outlineVariant, width: 0.5),
+              ),
+              child: Row(
+                children: [
+                  IconButton(
+                    icon: Icon(
+                      _isPlaying ? Icons.stop_circle : Icons.play_circle,
+                      color: colorScheme.primary,
+                      size: 32,
+                    ),
+                    onPressed: _togglePlayback,
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      sl.getText('aiVoiceToNote') ?? 'Voice to Note',
+                      style: TextStyle(fontSize: 12, color: colorScheme.onSurfaceVariant),
+                    ),
+                  ),
+                  IconButton(
+                    icon: const Icon(Icons.close, size: 18),
+                    onPressed: () {
+                      _audioPlayer.stop();
+                      setState(() {
+                        _lastRecordingPath = null;
+                        _isPlaying = false;
+                      });
+                    },
+                  ),
+                ],
+              ),
+            ),
+          ],
         ] else if (AiService.instance.state == AiServiceState.loading) ...[
           const SizedBox(height: 8),
           Row(
@@ -447,7 +533,7 @@ class _NoteItemState extends State<NoteItem>
 
     final buffer = StringBuffer();
     AiService.instance
-        .completeStream(systemPrompt, rawText)
+        .completeStreamNoThink(systemPrompt, rawText)
         .listen(
       (token) {
         buffer.write(token);
@@ -467,35 +553,23 @@ class _NoteItemState extends State<NoteItem>
   }
 
   void _organizeContent() {
-    _runAiAction(
-      'You are a note organizing assistant. Take the user\'s messy input and organize it into a well-structured note with clear categories and bullet points. Keep all original information, just reorganize it logically. Do NOT add any preamble or explanation, just output the organized content directly. ${AiService.instance.contextInfo}',
-    );
+    _runAiAction(AiPrompts.organize());
   }
 
   void _polishContent() {
-    _runAiAction(
-      'Improve the grammar, clarity and expression of the following text. Keep the original meaning. Do NOT add any preamble or explanation, just output the polished content directly. ${AiService.instance.contextInfo}',
-    );
+    _runAiAction(AiPrompts.polish());
   }
 
   void _continueContent() {
-    _runAiAction(
-      'Continue writing based on the following text. Match the style and topic. Do NOT repeat the original text, just output the continuation directly. ${AiService.instance.contextInfo}',
-    );
+    _runAiAction(AiPrompts.continueWriting());
   }
 
   void _translateContent() {
-    _runAiAction(
-      'Translate the following text. If it is Chinese, translate to English; if it is English, translate to Chinese. Do NOT add any preamble or explanation, just output the translation directly.',
-    );
+    _runAiAction(AiPrompts.translate);
   }
 
   void _photoToNote() async {
     if (!AiService.instance.isReady) return;
-    if (!AiService.instance.isVisionModel) {
-      _showVisionModelHint();
-      return;
-    }
     final sl = SimpleLocalizations.of(context)!;
 
     final source = await showModalBottomSheet<ImageSource>(
@@ -529,12 +603,13 @@ class _NoteItemState extends State<NoteItem>
 
     try {
       final result = await AiService.instance.completeMultimodal(
-        'You are a note-taking assistant. Analyze this image and generate well-structured note content describing what you see. Output only the note content, no preamble. ${AiService.instance.contextInfo}',
+        AiPrompts.imageToNote(),
         image.path,
         null,
       );
       if (mounted) {
         setState(() {
+          _cachedImagePath = image.path;
           _contentCtl.text = result;
           _contentCtl.selection =
               TextSelection.collapsed(offset: result.length);
@@ -544,39 +619,73 @@ class _NoteItemState extends State<NoteItem>
     if (mounted) setState(() => _isAiProcessing = false);
   }
 
-  void _showVisionModelHint() {
+  void _showReanalyzePrompt() {
+    final promptCtl = TextEditingController(
+      text: 'Analyze this image and generate well-structured note content.',
+    );
     final sl = SimpleLocalizations.of(context)!;
-    final colorScheme = Theme.of(context).colorScheme;
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(
-          sl.getText('aiVisionNotSupported') ??
-              'Current model does not support image. Switch to a vision model?',
-          style: TextStyle(color: colorScheme.onPrimaryContainer),
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (ctx) => Padding(
+        padding: EdgeInsets.only(
+          bottom: MediaQuery.of(ctx).viewInsets.bottom,
+          left: 16, right: 16, top: 16,
         ),
-        backgroundColor: colorScheme.primaryContainer,
-        behavior: SnackBarBehavior.floating,
-        action: SnackBarAction(
-          label: sl.getText('aiSwitchModel') ?? 'Switch',
-          onPressed: () async {
-            final visionModel = AiService.availableModels.firstWhere(
-                (m) => m.supportsVision,
-                orElse: () => AiService.availableModels[0]);
-            setState(() => _isAiProcessing = true);
-            await for (final _ in AiService.instance.switchModel(visionModel)) {}
-            if (mounted) setState(() => _isAiProcessing = false);
-          },
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            TextField(
+              controller: promptCtl,
+              maxLines: 3,
+              decoration: InputDecoration(
+                labelText: sl.getText('aiEditPrompt') ?? 'Edit prompt',
+                border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+              ),
+            ),
+            const SizedBox(height: 12),
+            SizedBox(
+              width: double.infinity,
+              child: FilledButton.icon(
+                icon: const Icon(Icons.play_arrow),
+                label: Text(sl.getText('aiRunPrompt') ?? 'Run'),
+                onPressed: () {
+                  Navigator.pop(ctx);
+                  _runReanalyze(promptCtl.text);
+                },
+              ),
+            ),
+            const SizedBox(height: 16),
+          ],
         ),
       ),
     );
   }
 
+  void _runReanalyze(String prompt) async {
+    if (!AiService.instance.isReady || _cachedImagePath == null) return;
+    setState(() => _isAiProcessing = true);
+    try {
+      final result = await AiService.instance.completeMultimodal(
+        '$prompt ${AiService.instance.contextInfo}',
+        _cachedImagePath!,
+        null,
+      );
+      if (mounted) {
+        setState(() {
+          _contentCtl.text = result;
+          _contentCtl.selection = TextSelection.collapsed(offset: result.length);
+        });
+      }
+    } catch (_) {}
+    if (mounted) setState(() => _isAiProcessing = false);
+  }
+
   void _toggleRecording() async {
     if (!AiService.instance.isReady) return;
-    if (!AiService.instance.isAudioModel) {
-      _showAudioModelHint();
-      return;
-    }
 
     if (_isRecording) {
       final path = await _recorder.stop();
@@ -585,10 +694,13 @@ class _NoteItemState extends State<NoteItem>
         _recordingDuration = 0;
       });
       if (path == null) return;
-      setState(() => _isAiProcessing = true);
+      setState(() {
+        _isAiProcessing = true;
+        _lastRecordingPath = path;
+      });
       try {
         final result = await AiService.instance.completeAudio(
-          'You are a transcription assistant. Transcribe the audio content accurately into text. Output only the transcription, no preamble or explanation. ${AiService.instance.contextInfo}',
+          AiPrompts.transcribeAudio(),
           path,
           null,
         );
@@ -631,32 +743,27 @@ class _NoteItemState extends State<NoteItem>
     }
   }
 
-  void _showAudioModelHint() {
-    final sl = SimpleLocalizations.of(context)!;
-    final colorScheme = Theme.of(context).colorScheme;
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(
-          sl.getText('aiAudioNotSupported') ??
-              'Current model does not support audio. Switch to an audio model?',
-          style: TextStyle(color: colorScheme.onPrimaryContainer),
-        ),
-        backgroundColor: colorScheme.primaryContainer,
-        behavior: SnackBarBehavior.floating,
-        action: SnackBarAction(
-          label: sl.getText('aiSwitchModel') ?? 'Switch',
-          onPressed: () async {
-            final audioModel = AiService.availableModels.firstWhere(
-                (m) => m.supportsAudio,
-                orElse: () => AiService.availableModels[0]);
-            setState(() => _isAiProcessing = true);
-            await for (final _ in AiService.instance.switchModel(audioModel)) {}
-            if (mounted) setState(() => _isAiProcessing = false);
-          },
-        ),
-      ),
-    );
+  void _togglePlayback() async {
+    if (_lastRecordingPath == null) return;
+    if (_isPlaying) {
+      await _audioPlayer.stop();
+      if (mounted) setState(() => _isPlaying = false);
+    } else {
+      try {
+        await _audioPlayer.setFilePath(_lastRecordingPath!);
+        setState(() => _isPlaying = true);
+        _audioPlayer.play();
+        _audioPlayer.playerStateStream.listen((state) {
+          if (state.processingState == ProcessingState.completed && mounted) {
+            setState(() => _isPlaying = false);
+          }
+        });
+      } catch (_) {
+        if (mounted) setState(() => _isPlaying = false);
+      }
+    }
   }
+
 
   Widget _buildSaveButton(ColorScheme colorScheme, SimpleLocalizations sl) {
     return SizedBox(
