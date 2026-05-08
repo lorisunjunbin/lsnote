@@ -7,12 +7,13 @@ S22Ultra and S24U and S26U
 - import/export data manually(backup before remove the app), standard json format
 - fingerprint authentication for app lock, if device support it
 
-## On-Device AI (v1.3.0)
+## On-Device AI (v1.3.2)
 
 Powered by **Gemma 4 E4B-it** via LiteRT-LM, all AI features run locally on-device — no network required.
 
 ### AI Chat
 - Multi-turn conversation with streaming responses
+- Polished chat UI with refined bubble styling and typing indicators
 - Attach a note as context for Q&A
 - Send images for AI analysis (vision)
 - Send voice messages for AI transcription (audio)
