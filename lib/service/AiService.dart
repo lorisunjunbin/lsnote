@@ -124,6 +124,15 @@ class AiService {
 
   bool get isReady => _state == AiServiceState.ready;
 
+  bool get _isQwenModel =>
+      _modelPath.toLowerCase().contains('qwen');
+
+  bool get isThinkingModel => _isQwenModel;
+
+  static final _reThinkComplete = RegExp(r'<think>[\s\S]*?</think>');
+  static final _reThinkOpen = RegExp(r'<think>[\s\S]*$');
+  static final _reThinkPartial = RegExp(r'<think>[\s\S]*?(</think>)?');
+
   bool get isVisionModel {
     if (!isReady || _modelPath.isEmpty) return false;
     return _isCurrentModelVision();
@@ -280,7 +289,11 @@ class AiService {
     _errorMessage = null;
 
     try {
-      await _engine?.dispose();
+      if (_engine != null) {
+        await _engine!.dispose();
+        _engine = null;
+        await Future.delayed(const Duration(milliseconds: 300));
+      }
       _engine = await LiteLmEngine.create(
         LiteLmEngineConfig(
           modelPath: _modelPath,
@@ -315,28 +328,52 @@ class AiService {
   }
 
   Stream<String> completeStream(
-      String systemPrompt, String userMessage) async* {
+      String systemPrompt, String userMessage,
+      {int? maxLength}) async* {
     if (_engine == null || _state != AiServiceState.ready) {
       throw AiServiceException('AI engine not ready');
     }
 
+    final effectivePrompt =
+        _isQwenModel ? '$systemPrompt\n/no_think' : systemPrompt;
+
     final conversation = await _engine!.createConversation(
       LiteLmConversationConfig(
-        systemInstruction: systemPrompt,
-        samplerConfig: const LiteLmSamplerConfig(
-          temperature: 0.7,
-          topK: 40,
+        systemInstruction: effectivePrompt,
+        samplerConfig: LiteLmSamplerConfig(
+          temperature: _isQwenModel ? 0.9 : 0.7,
+          topK: _isQwenModel ? 64 : 40,
           topP: 0.95,
         ),
       ),
     );
 
     try {
-      await for (final delta in conversation.sendMessageStream(userMessage)) {
-        yield delta.text;
+      if (_isQwenModel) {
+        yield* _streamThinkFiltered(conversation, userMessage,
+            maxLength: maxLength);
+      } else {
+        if (maxLength != null) {
+          final buffer = StringBuffer();
+          await for (final delta
+              in conversation.sendMessageStream(userMessage)) {
+            buffer.write(delta.text);
+            final text = buffer.toString();
+            if (text.length >= maxLength) {
+              yield text.substring(0, maxLength);
+              break;
+            }
+            yield delta.text;
+          }
+        } else {
+          await for (final delta
+              in conversation.sendMessageStream(userMessage)) {
+            yield delta.text;
+          }
+        }
       }
     } finally {
-      await conversation.dispose();
+      conversation.dispose();
     }
   }
 
@@ -346,8 +383,8 @@ class AiService {
       throw AiServiceException('AI engine not ready');
     }
 
-    final isQwen = _modelPath.contains('qwen') || _modelPath.contains('Qwen');
-    final noThinkPrompt = isQwen ? '$systemPrompt\n/no_think' : systemPrompt;
+    final noThinkPrompt =
+        _isQwenModel ? '$systemPrompt\n/no_think' : systemPrompt;
 
     final conversation = await _engine!.createConversation(
       LiteLmConversationConfig(
@@ -360,56 +397,58 @@ class AiService {
       ),
     );
 
+    try {
+      yield* _streamThinkFiltered(conversation, userMessage,
+          maxLength: maxLength);
+    } finally {
+      conversation.dispose();
+    }
+  }
+
+  Stream<String> _streamThinkFiltered(
+      LiteLmConversation conversation, String userMessage,
+      {int? maxLength}) async* {
     final buffer = StringBuffer();
     bool inThink = false;
 
-    try {
-      await for (final delta in conversation.sendMessageStream(userMessage)) {
-        buffer.write(delta.text);
-        final text = buffer.toString();
-        if (!inThink && text.contains('<think>')) {
-          inThink = true;
-        }
-        if (inThink && text.contains('</think>')) {
-          final cleaned =
-              text.replaceAll(RegExp(r'<think>[\s\S]*?</think>'), '').trim();
-          buffer.clear();
-          buffer.write(cleaned);
-          inThink = false;
-          if (cleaned.length >= maxLength) {
-            yield cleaned.substring(0, maxLength);
-            break;
-          }
-          yield cleaned;
-        } else if (!inThink) {
-          final cleaned =
-              text.replaceAll(RegExp(r'<think>[\s\S]*$'), '').trim();
-          if (cleaned.length >= maxLength) {
-            yield cleaned.substring(0, maxLength);
-            break;
-          }
-          if (cleaned.isNotEmpty) {
-            yield cleaned;
-          }
-        }
+    await for (final delta in conversation.sendMessageStream(userMessage)) {
+      buffer.write(delta.text);
+      final text = buffer.toString();
+      if (!inThink && text.contains('<think>')) {
+        inThink = true;
       }
-      if (inThink) {
-        final text = buffer.toString();
-        final cleaned =
-            text.replaceAll(RegExp(r'<think>[\s\S]*?(</think>)?'), '').trim();
-        if (cleaned.isNotEmpty) {
-          yield cleaned.length > maxLength
-              ? cleaned.substring(0, maxLength)
-              : cleaned;
+      if (inThink && text.contains('</think>')) {
+        final cleaned = text.replaceAll(_reThinkComplete, '').trim();
+        buffer.clear();
+        buffer.write(cleaned);
+        inThink = false;
+        if (maxLength != null && cleaned.length >= maxLength) {
+          yield cleaned.substring(0, maxLength);
+          return;
         }
+        if (cleaned.isNotEmpty) yield cleaned;
+      } else if (!inThink) {
+        final cleaned = text.replaceAll(_reThinkOpen, '').trim();
+        if (maxLength != null && cleaned.length >= maxLength) {
+          yield cleaned.substring(0, maxLength);
+          return;
+        }
+        if (cleaned.isNotEmpty) yield cleaned;
       }
-    } finally {
-      await conversation.dispose();
+    }
+    if (inThink) {
+      final text = buffer.toString();
+      final cleaned = text.replaceAll(_reThinkPartial, '').trim();
+      if (cleaned.isNotEmpty) {
+        yield (maxLength != null && cleaned.length > maxLength)
+            ? cleaned.substring(0, maxLength)
+            : cleaned;
+      }
     }
   }
 
   static String stripThinkingTags(String text) {
-    return text.replaceAll(RegExp(r'<think>[\s\S]*?</think>'), '').trim();
+    return text.replaceAll(_reThinkComplete, '').trim();
   }
 
   Future<String> completeMultimodal(
@@ -586,8 +625,16 @@ class AiService {
     final filePath = '$dir/${model.fileName}';
     final file = File(filePath);
     if (!await file.exists()) return false;
-    await _engine?.dispose();
-    _engine = null;
+
+    // Fully unload current model first
+    if (_engine != null) {
+      _state = AiServiceState.uninitialized;
+      await _engine!.dispose();
+      _engine = null;
+      // Allow system to reclaim GPU/memory resources
+      await Future.delayed(const Duration(milliseconds: 500));
+    }
+
     _modelPath = filePath;
     db.setConfig(Config.aiModelPath, filePath);
     return await initialize();
@@ -599,9 +646,12 @@ class AiService {
       yield 1.0;
       return;
     }
-    await _engine?.dispose();
-    _engine = null;
-    _state = AiServiceState.uninitialized;
+    if (_engine != null) {
+      _state = AiServiceState.uninitialized;
+      await _engine!.dispose();
+      _engine = null;
+      await Future.delayed(const Duration(milliseconds: 500));
+    }
     yield* downloadModel(newModel);
   }
 

@@ -245,15 +245,10 @@ public class FlutterLitertLmPlugin: NSObject, FlutterPlugin, FlutterStreamHandle
             toConversation: conv,
             extraContext: extraContext,
             onChunk: { [weak self] chunk in
-                // On iOS, the native C API emits each streaming chunk wrapped
-                // in a JSON envelope like:
-                //   [{"role":"assistant","content":[[{"type":"text","text":"May"}]]}]
-                // Parse it to extract just the new text delta and hand that
-                // to Dart, which expects delta-per-event (the chat UI does
-                // reply.text += msg.text for accumulation).
+                guard let self = self else { return }
                 let delta = FlutterLitertLmPlugin.extractTextDelta(fromStreamChunk: chunk)
                 DispatchQueue.main.async {
-                    self?.eventSink?([
+                    self.eventSink?([
                         "role": "model",
                         "text": delta,
                         "toolCalls": [] as [[String: Any]],

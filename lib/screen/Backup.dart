@@ -293,7 +293,7 @@ class _BackupState extends State<Backup> {
   }
 
   Future<String?> _pickExportDirectory() async {
-    final selected = await FilePicker.platform.getDirectoryPath(
+    final selected = await FilePicker.getDirectoryPath(
       dialogTitle: _t('backupChooseFolderDialogTitle', 'Choose folder to save backup'),
     );
     return selected;
@@ -307,7 +307,7 @@ class _BackupState extends State<Backup> {
         .first;
     final suggestedFileName = 'lsnote_backup_$timestamp.json';
 
-    final path = await FilePicker.platform.saveFile(
+    final path = await FilePicker.saveFile(
       dialogTitle: _t('backupChooseLocationDialogTitle', 'Choose location to save backup'),
       fileName: suggestedFileName,
       type: FileType.custom,

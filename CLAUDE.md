@@ -185,6 +185,15 @@ try {
 }
 ```
 
+### AI Engine 并发与生命周期管理
+
+- **LiteRT-LM engine 单线程**：不能并发调用，流式输出进行中再发请求会导致崩溃
+- **所有 AI stream 必须保存为 `StreamSubscription`**：页面 dispose 时 cancel，防止后台继续调用已释放的 engine
+- **切换模型需要延迟**：dispose 旧 engine 后需 `Future.delayed(500ms)` 让 GPU/内存资源回收，再 create 新 engine
+- **推理不可中断**：LiteRT-LM native 层无法安全中断进行中的推理（MethodChannel 阻塞、cooperative cancellation 无效）。UI 上不提供停止按钮，推理开始后等待完成。推理中禁用发送按钮并显示 loading indicator
+- **轻量场景（greeting/game）的 `.listen()` 必须 try-catch 包裹**：engine 状态异常时不能让 app 崩溃
+- **不要尝试实现 cancelStream / 中断推理**：已验证 native FFI dispose 会阻塞 Dart main isolate 直到推理完成，无论是 fire-and-forget、requestId 失效、还是 coroutine Job.cancel() 都无法避免 UI 卡死
+
 ### Gotchas
 
 - **Dart SDK**: Project uses `>=2.12.0 <4.0.0` — switch cases need `break` statements (no Dart 3 exhaustive patterns)
@@ -195,3 +204,4 @@ try {
 - **flutter_litert_lm fork**: `plugins/flutter_litert_lm/` 是必要 fork — 升级 litertlm-android 到 0.11.0 并添加 `maxNumImages` 参数，修复 vision SIGSEGV。待上游 pub 包更新后可移除
 - **record package**: `record_linux` 与 `record_platform_interface` 版本不兼容会导致 Android build 失败。通过 `dependency_overrides` 中 `record_linux: ^1.3.0` 解决
 - **NoteAccessSqlite API**: 添加笔记用 `db.addNote(note)`；删除用 `db.deleteNoteItem(item)`；更新内容用 `db.updateNoteItemContent(id, text)`
+- **bin/ 目录已 gitignore**：APK release 文件上传到 GitHub Release，不 commit 到 git（GitHub 100MB 文件限制）

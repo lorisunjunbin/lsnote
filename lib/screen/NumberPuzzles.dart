@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:lorisun_note/screen/NoteLanding.dart';
@@ -32,9 +34,11 @@ class _NumberPuzzlesState extends State<NumberPuzzles> {
   String _aiHint = '';
   bool _isHintLoading = false;
   String _aiComment = '';
+  final List<StreamSubscription> _aiSubs = [];
 
   void _requestHint(GuessitemChangeNotifier provider) {
     if (!AiService.instance.isReady || _isHintLoading) return;
+    if (AiService.instance.isThinkingModel) return;
 
     final history = provider.guessItems
         .map((itm) => '${itm.tryAnswer} → ${itm.result}')
@@ -46,27 +50,34 @@ class _NumberPuzzlesState extends State<NumberPuzzles> {
     });
 
     final buffer = StringBuffer();
-    AiService.instance
-        .completeStream(
-      AiPrompts.gameHint(),
-      history,
-    )
-        .listen(
-      (token) {
-        buffer.write(token);
-        if (mounted) setState(() => _aiHint = buffer.toString());
-      },
-      onDone: () {
-        if (mounted) setState(() => _isHintLoading = false);
-      },
-      onError: (_) {
-        if (mounted) setState(() { _aiHint = ''; _isHintLoading = false; });
-      },
-    );
+    try {
+      final sub = AiService.instance
+          .completeStream(
+        AiPrompts.gameHint(),
+        history,
+        maxLength: 60,
+      )
+          .listen(
+        (token) {
+          buffer.write(token);
+          if (mounted) setState(() => _aiHint = buffer.toString());
+        },
+        onDone: () {
+          if (mounted) setState(() => _isHintLoading = false);
+        },
+        onError: (_) {
+          if (mounted) setState(() { _aiHint = ''; _isHintLoading = false; });
+        },
+      );
+      _aiSubs.add(sub);
+    } catch (_) {
+      if (mounted) setState(() { _aiHint = ''; _isHintLoading = false; });
+    }
   }
 
   void _requestWinComment(GuessitemChangeNotifier provider) {
     if (!AiService.instance.isReady) return;
+    if (AiService.instance.isThinkingModel) return;
 
     final guessCount = provider.guessItems.length;
     final firstTime = provider.guessItems.first.tryTime;
@@ -76,18 +87,22 @@ class _NumberPuzzlesState extends State<NumberPuzzles> {
         : 0;
 
     final buffer = StringBuffer();
-    AiService.instance
-        .completeStream(
-      AiPrompts.gameWin(),
-      '$guessCount guesses, ${totalSeconds}s',
-    )
-        .listen(
-      (token) {
-        buffer.write(token);
-        if (mounted) setState(() => _aiComment = buffer.toString());
-      },
-      onError: (_) {},
-    );
+    try {
+      final sub = AiService.instance
+          .completeStream(
+        AiPrompts.gameWin(),
+        '$guessCount guesses, ${totalSeconds}s',
+        maxLength: 60,
+      )
+          .listen(
+        (token) {
+          buffer.write(token);
+          if (mounted) setState(() => _aiComment = buffer.toString());
+        },
+        onError: (_) {},
+      );
+      _aiSubs.add(sub);
+    } catch (_) {}
   }
 
   void _guess(GuessitemChangeNotifier provider) {
@@ -531,6 +546,7 @@ $bText ${sl?.getText('resultCorrectValue') ?? 'numbers correct but in wrong posi
                   ),
                 ),
                 if (AiService.instance.isReady &&
+                    !AiService.instance.isThinkingModel &&
                     !guessitemProvider.isMatched &&
                     guessitemProvider.guessItems.isNotEmpty)
                   IconButton(
@@ -618,6 +634,9 @@ $bText ${sl?.getText('resultCorrectValue') ?? 'numbers correct but in wrong posi
 
   @override
   void dispose() {
+    for (final sub in _aiSubs) {
+      sub.cancel();
+    }
     for (TextEditingController controller in _ctlrs) {
       controller.dispose();
     }

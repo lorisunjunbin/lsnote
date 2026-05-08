@@ -45,7 +45,6 @@ class FlutterLitertLmPlugin : FlutterPlugin, MethodCallHandler, EventChannel.Str
         methodChannel.setMethodCallHandler(null)
         eventChannel.setStreamHandler(null)
         scope.cancel()
-        // Clean up all resources
         conversations.values.forEach { it.close() }
         conversations.clear()
         engines.values.forEach { it.close() }
@@ -194,9 +193,10 @@ class FlutterLitertLmPlugin : FlutterPlugin, MethodCallHandler, EventChannel.Str
     }
 
     private fun handleStartMessageStream(call: MethodCall, result: Result) {
+        val convId = call.argument<String>("conversationId")!!
+
         scope.launch {
             try {
-                val convId = call.argument<String>("conversationId")!!
                 val contentsList = call.argument<List<Map<String, Any>>>("contents")!!
                 @Suppress("UNCHECKED_CAST")
                 val extraContext = call.argument<Map<String, Any>>("extraContext")
@@ -227,7 +227,6 @@ class FlutterLitertLmPlugin : FlutterPlugin, MethodCallHandler, EventChannel.Str
                 }
             }
         }
-        // Return immediately — streaming happens via event channel
         result.success(null)
     }
 

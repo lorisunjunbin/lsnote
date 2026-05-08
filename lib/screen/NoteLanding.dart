@@ -45,6 +45,7 @@ class _NoteLandingState extends State<NoteLanding> {
   final Map<int, List<String>> _redoStacks = {};
   final Map<int, bool> _isOrganizing = {};
   bool _welcomeRequested = false;
+  final List<StreamSubscription> _aiSubs = [];
 
   final AudioRecorder _recorder = AudioRecorder();
   bool _isRecording = false;
@@ -125,6 +126,7 @@ class _NoteLandingState extends State<NoteLanding> {
 
   void _requestWelcome() async {
     if (_welcomeRequested || !AiService.instance.isReady) return;
+    if (AiService.instance.isThinkingModel) return;
     _welcomeRequested = true;
 
     final hour = DateTime.now().hour;
@@ -140,36 +142,40 @@ class _NoteLandingState extends State<NoteLanding> {
     final now = DateTime.now();
     final topics = ['food', 'blue sky', 'coffee', 'cats', 'fresh air', 'food', 'music'];
     final topic = topics[now.millisecondsSinceEpoch % topics.length];
-    AiService.instance
-        .completeStream(
-      AiPrompts.greeting(topic),
-      timeOfDay,
-    )
-        .listen(
-      (token) {
-        buffer.write(token);
-      },
-      onDone: () {
-        final msg = buffer.toString().trim();
-        if (msg.isNotEmpty && mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Row(
-                children: [
-                  const Icon(Icons.auto_awesome, size: 16, color: Colors.white),
-                  const SizedBox(width: 8),
-                  Expanded(child: Text(msg)),
-                ],
+    try {
+      final sub = AiService.instance
+          .completeStream(
+        AiPrompts.greeting(topic),
+        timeOfDay,
+        maxLength: 80,
+      )
+          .listen(
+        (token) {
+          buffer.write(token);
+        },
+        onDone: () {
+          final msg = buffer.toString().trim();
+          if (msg.isNotEmpty && mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: Row(
+                  children: [
+                    const Icon(Icons.auto_awesome, size: 16, color: Colors.white),
+                    const SizedBox(width: 8),
+                    Expanded(child: Text(msg)),
+                  ],
+                ),
+                duration: const Duration(seconds: 4),
+                behavior: SnackBarBehavior.floating,
+                margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
               ),
-              duration: const Duration(seconds: 4),
-              behavior: SnackBarBehavior.floating,
-              margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-            ),
-          );
-        }
-      },
-      onError: (_) {},
-    );
+            );
+          }
+        },
+        onError: (_) {},
+      );
+      _aiSubs.add(sub);
+    } catch (_) {}
   }
 
   Future<void> _showRecordingSheet() async {
@@ -375,6 +381,9 @@ class _NoteLandingState extends State<NoteLanding> {
 
   @override
   void dispose() {
+    for (final sub in _aiSubs) {
+      sub.cancel();
+    }
     _recordingTimer?.cancel();
     _recorder.dispose();
     _ctrls.forEach((key, value) {
@@ -679,28 +688,33 @@ class _NoteLandingState extends State<NoteLanding> {
 
     final rawText = ctrl.text.trim();
     final buffer = StringBuffer();
-    AiService.instance
-        .completeStream(
-      AiPrompts.landingOrganize(),
-      rawText,
-    )
-        .listen(
-      (token) {
-        buffer.write(token);
-        if (mounted) {
-          setState(() {
-            ctrl.text = AiService.stripThinkingTags(buffer.toString());
-            ctrl.selection = TextSelection.collapsed(offset: ctrl.text.length);
-          });
-        }
-      },
-      onDone: () {
-        if (mounted) setState(() => _isOrganizing[item.id!] = false);
-      },
-      onError: (_) {
-        if (mounted) setState(() => _isOrganizing[item.id!] = false);
-      },
-    );
+    try {
+      final sub = AiService.instance
+          .completeStream(
+        AiPrompts.landingOrganize(),
+        rawText,
+      )
+          .listen(
+        (token) {
+          buffer.write(token);
+          if (mounted) {
+            setState(() {
+              ctrl.text = AiService.stripThinkingTags(buffer.toString());
+              ctrl.selection = TextSelection.collapsed(offset: ctrl.text.length);
+            });
+          }
+        },
+        onDone: () {
+          if (mounted) setState(() => _isOrganizing[item.id!] = false);
+        },
+        onError: (_) {
+          if (mounted) setState(() => _isOrganizing[item.id!] = false);
+        },
+      );
+      _aiSubs.add(sub);
+    } catch (_) {
+      if (mounted) setState(() => _isOrganizing[item.id!] = false);
+    }
   }
 
   Future<void> _handleCardSave(Note item, SimpleLocalizations sl) async {
@@ -865,6 +879,7 @@ class _NoteLandingState extends State<NoteLanding> {
 
   void _showAiColorCompliment(Color color) async {
     if (!AiService.instance.isReady) return;
+    if (AiService.instance.isThinkingModel) return;
 
     final colorNames = {
       Colors.red: 'Red/红色',
@@ -887,29 +902,33 @@ class _NoteLandingState extends State<NoteLanding> {
     final colorName = colorNames[color] ?? color.toString();
 
     final buffer = StringBuffer();
-    AiService.instance
-        .completeStream(
-          AiPrompts.colorCompliment(colorName),
-          colorName,
-        )
-        .listen(
-      (token) {
-        buffer.write(token);
-      },
-      onDone: () {
-        final text = buffer.toString().trim();
-        if (text.isNotEmpty && mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text(text),
-              behavior: SnackBarBehavior.floating,
-              duration: const Duration(seconds: 3),
-            ),
-          );
-        }
-      },
-      onError: (_) {},
-    );
+    try {
+      final sub = AiService.instance
+          .completeStream(
+            AiPrompts.colorCompliment(colorName),
+            colorName,
+            maxLength: 60,
+          )
+          .listen(
+        (token) {
+          buffer.write(token);
+        },
+        onDone: () {
+          final text = buffer.toString().trim();
+          if (text.isNotEmpty && mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: Text(text),
+                behavior: SnackBarBehavior.floating,
+                duration: const Duration(seconds: 3),
+              ),
+            );
+          }
+        },
+        onError: (_) {},
+      );
+      _aiSubs.add(sub);
+    } catch (_) {}
   }
 
   Future<void> _showAiAssistSheet(
@@ -919,6 +938,7 @@ class _NoteLandingState extends State<NoteLanding> {
 
     String? aiResult;
     bool isLoading = false;
+    bool sheetClosed = false;
 
     await showModalBottomSheet(
       context: context,
@@ -929,6 +949,10 @@ class _NoteLandingState extends State<NoteLanding> {
       builder: (sheetContext) {
         return StatefulBuilder(
           builder: (ctx, setSheetState) {
+            void safeSetState(VoidCallback fn) {
+              if (!sheetClosed) setSheetState(fn);
+            }
+
             Future<void> runAction(String systemPrompt) async {
               if (!AiService.instance.isReady) {
                 if (mounted) {
@@ -940,25 +964,43 @@ class _NoteLandingState extends State<NoteLanding> {
                 }
                 return;
               }
-              setSheetState(() {
+              if (isLoading) return;
+              safeSetState(() {
                 isLoading = true;
                 aiResult = '';
               });
 
               try {
-                await for (final token
-                    in AiService.instance.completeStream(systemPrompt, content)) {
-                  setSheetState(() {
-                    aiResult = AiService.stripThinkingTags(
-                        (aiResult ?? '') + token);
-                  });
-                }
+                final completer = Completer<void>();
+                final sub = AiService.instance
+                    .completeStream(systemPrompt, content)
+                    .listen(
+                  (token) {
+                    safeSetState(() {
+                      aiResult = AiService.stripThinkingTags(
+                          (aiResult ?? '') + token);
+                    });
+                  },
+                  onDone: () {
+                    safeSetState(() => isLoading = false);
+                    if (!completer.isCompleted) completer.complete();
+                  },
+                  onError: (e) {
+                    safeSetState(() {
+                      aiResult = 'Error: $e';
+                      isLoading = false;
+                    });
+                    if (!completer.isCompleted) completer.complete();
+                  },
+                  cancelOnError: true,
+                );
+                _aiSubs.add(sub);
+                await completer.future;
               } catch (e) {
-                setSheetState(() {
+                safeSetState(() {
                   aiResult = 'Error: $e';
+                  isLoading = false;
                 });
-              } finally {
-                setSheetState(() => isLoading = false);
               }
             }
 
@@ -1082,7 +1124,9 @@ class _NoteLandingState extends State<NoteLanding> {
           },
         );
       },
-    );
+    ).whenComplete(() {
+      sheetClosed = true;
+    });
   }
 
   Widget _aiActionChip(String label, IconData icon, ColorScheme colorScheme,

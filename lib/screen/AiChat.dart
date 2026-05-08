@@ -35,6 +35,7 @@ class _AiChatState extends State<AiChat> {
   bool _isStreaming = false;
   String? _pendingImagePath;
   LiteLmConversation? _conversation;
+  StreamSubscription? _streamSub;
 
   final AudioRecorder _recorder = AudioRecorder();
   bool _isRecording = false;
@@ -62,10 +63,11 @@ class _AiChatState extends State<AiChat> {
 
   @override
   void dispose() {
+    _streamSub?.cancel();
+    _conversation?.dispose();
     _recordingTimer?.cancel();
     _recorder.dispose();
     _audioPlayer.dispose();
-    _conversation?.dispose();
     _inputCtl.dispose();
     _scrollCtl.dispose();
     super.dispose();
@@ -264,9 +266,11 @@ class _AiChatState extends State<AiChat> {
         setState(() => _isStreaming = false);
       }
     } else {
-      try {
-        final buffer = StringBuffer();
-        await for (final token in _conversation!.sendMessageStream(text)) {
+      final buffer = StringBuffer();
+      final completer = Completer<void>();
+      _streamSub = _conversation!.sendMessageStream(text).listen(
+        (token) {
+          if (!mounted) return;
           buffer.write(token.text);
           final raw = buffer.toString();
           final parsed = _parseThinking(raw);
@@ -281,18 +285,30 @@ class _AiChatState extends State<AiChat> {
             );
           });
           _scrollToBottom();
-        }
-      } catch (e) {
-        setState(() {
-          _messages[_messages.length - 1] = ChatMessage(
-            role: 'assistant',
-            content: 'Error: $e',
-            timestamp: assistantMsg.timestamp,
-          );
-        });
-      } finally {
-        setState(() => _isStreaming = false);
-      }
+        },
+        onError: (e) {
+          if (mounted) {
+            setState(() {
+              _messages[_messages.length - 1] = ChatMessage(
+                role: 'assistant',
+                content: 'Error: $e',
+                timestamp: assistantMsg.timestamp,
+              );
+              _isStreaming = false;
+            });
+          }
+          if (!completer.isCompleted) completer.complete();
+        },
+        onDone: () {
+          if (mounted) {
+            setState(() => _isStreaming = false);
+          }
+          if (!completer.isCompleted) completer.complete();
+        },
+        cancelOnError: true,
+      );
+      await completer.future;
+      _streamSub = null;
     }
     _scrollToBottom();
   }
@@ -461,6 +477,8 @@ class _AiChatState extends State<AiChat> {
                         ? null
                         : () async {
                             setDialogState(() => isInitializing = true);
+                            _conversation?.dispose();
+                            _conversation = null;
                             await AiService.instance.activateModel(model);
                             final newBytes =
                                 await AiService.instance.modelFileSize;
@@ -769,6 +787,9 @@ class _AiChatState extends State<AiChat> {
                                       downloadError = null;
                                     });
 
+                                    _conversation?.dispose();
+                                    _conversation = null;
+
                                     final stream = hasModel
                                         ? AiService.instance.switchModel(model)
                                         : AiService.instance
@@ -843,7 +864,7 @@ class _AiChatState extends State<AiChat> {
                             ? null
                             : () async {
                                 final result =
-                                    await FilePicker.platform.pickFiles(
+                                    await FilePicker.pickFiles(
                                   type: FileType.any,
                                 );
                                 if (result != null &&
@@ -1122,7 +1143,7 @@ class _AiChatState extends State<AiChat> {
                         mainAxisAlignment: MainAxisAlignment.center,
                         children: [
                           Icon(Icons.auto_awesome,
-                              size: 56,
+                              size: 48,
                               color: colorScheme.primary.withValues(alpha: 0.4)),
                           const SizedBox(height: 16),
                           Text(
@@ -1133,6 +1154,16 @@ class _AiChatState extends State<AiChat> {
                               fontWeight: FontWeight.w500,
                             ),
                           ),
+                          if (AiService.instance.isReady) ...[
+                            const SizedBox(height: 6),
+                            Text(
+                              AiService.instance.modelPath.split('/').last.replaceAll('.litertlm', ''),
+                              style: TextStyle(
+                                fontSize: 11,
+                                color: colorScheme.onSurfaceVariant.withValues(alpha: 0.6),
+                              ),
+                            ),
+                          ],
                           const SizedBox(height: 24),
                           Wrap(
                             spacing: 8,
@@ -1176,7 +1207,7 @@ class _AiChatState extends State<AiChat> {
     return ActionChip(
       avatar: Icon(icon, size: 16),
       label: Text(label, style: const TextStyle(fontSize: 12)),
-      backgroundColor: colorScheme.surfaceContainerLow,
+      backgroundColor: Colors.transparent,
       side: BorderSide(color: colorScheme.outlineVariant),
       onPressed: () => _inputCtl.text = label,
     );
@@ -1191,7 +1222,7 @@ class _AiChatState extends State<AiChat> {
     final sl = SimpleLocalizations.of(context)!;
 
     return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 4),
+      padding: const EdgeInsets.symmetric(vertical: 6),
       child: Row(
         mainAxisAlignment:
             isUser ? MainAxisAlignment.end : MainAxisAlignment.start,
@@ -1199,10 +1230,10 @@ class _AiChatState extends State<AiChat> {
         children: [
           if (!isUser) ...[
             CircleAvatar(
-              radius: 14,
+              radius: 12,
               backgroundColor: colorScheme.primaryContainer,
               child: Icon(Icons.auto_awesome,
-                  size: 14, color: colorScheme.onPrimaryContainer),
+                  size: 12, color: colorScheme.onPrimaryContainer),
             ),
             const SizedBox(width: 8),
           ],
@@ -1216,8 +1247,8 @@ class _AiChatState extends State<AiChat> {
                 side: isUser
                     ? BorderSide.none
                     : BorderSide(
-                        color: colorScheme.primary.withValues(alpha: 0.55),
-                        width: 0.35),
+                        color: colorScheme.primary.withValues(alpha: 0.15),
+                        width: 0.5),
                 borderRadius: BorderRadius.only(
                   topLeft: const Radius.circular(16),
                   topRight: const Radius.circular(16),
@@ -1254,7 +1285,7 @@ class _AiChatState extends State<AiChat> {
                                 fontStyle: FontStyle.italic,
                                 color: isUser
                                     ? colorScheme.onPrimaryContainer
-                                        .withValues(alpha: 0.8)
+                                        .withValues(alpha: 0.7)
                                     : colorScheme.onSurface
                                         .withValues(alpha: 0.7),
                               ),
@@ -1333,7 +1364,7 @@ class _AiChatState extends State<AiChat> {
                           color: (isUser
                                   ? colorScheme.onPrimaryContainer
                                   : colorScheme.onSurfaceVariant)
-                              .withValues(alpha: 0.5),
+                              .withValues(alpha: 0.4),
                         ),
                       ),
                     ],
@@ -1342,15 +1373,8 @@ class _AiChatState extends State<AiChat> {
               ),
             ),
           ),
-          if (isUser) ...[
-            const SizedBox(width: 8),
-            CircleAvatar(
-              radius: 14,
-              backgroundColor: colorScheme.tertiaryContainer,
-              child: Icon(Icons.person,
-                  size: 14, color: colorScheme.onTertiaryContainer),
-            ),
-          ],
+          if (isUser)
+            const SizedBox(width: 40),
         ],
       ),
     );
@@ -1440,7 +1464,7 @@ class _AiChatState extends State<AiChat> {
         color: colorScheme.surface,
         boxShadow: [
           BoxShadow(
-            color: colorScheme.shadow.withValues(alpha: 0.06),
+            color: colorScheme.shadow.withValues(alpha: 0.04),
             blurRadius: 8,
             offset: const Offset(0, -2),
           ),
@@ -1452,14 +1476,19 @@ class _AiChatState extends State<AiChat> {
           mainAxisSize: MainAxisSize.min,
           children: [
             if (_pendingImagePath != null)
-              Padding(
-                padding: const EdgeInsets.only(bottom: 8),
+              Container(
+                margin: const EdgeInsets.only(bottom: 8),
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  color: colorScheme.surfaceContainerLow,
+                  borderRadius: BorderRadius.circular(12),
+                ),
                 child: Row(
                   children: [
                     ClipRRect(
-                      borderRadius: BorderRadius.circular(12),
+                      borderRadius: BorderRadius.circular(8),
                       child: Image.file(File(_pendingImagePath!),
-                          width: 120, height: 90, fit: BoxFit.cover),
+                          width: 100, height: 75, fit: BoxFit.cover),
                     ),
                     const SizedBox(width: 12),
                     Expanded(
@@ -1472,7 +1501,7 @@ class _AiChatState extends State<AiChat> {
                     ),
                     IconButton(
                       icon: Icon(Icons.close,
-                          size: 20, color: colorScheme.onSurfaceVariant),
+                          size: 18, color: colorScheme.onSurfaceVariant),
                       onPressed: () =>
                           setState(() => _pendingImagePath = null),
                     ),
@@ -1532,7 +1561,7 @@ class _AiChatState extends State<AiChat> {
                         hintText:
                             sl.getText('aiInputHint') ?? 'Ask anything...',
                         border: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(24),
+                          borderRadius: BorderRadius.circular(20),
                           borderSide: BorderSide.none,
                         ),
                         filled: true,
@@ -1552,28 +1581,41 @@ class _AiChatState extends State<AiChat> {
                       color: _isRecording ? Colors.red : colorScheme.primary,
                     ),
                   ),
-                FloatingActionButton.small(
-                  heroTag: 'chatSend',
-                  onPressed: (_isStreaming ||
-                          !AiService.instance.isReady ||
-                          _isRecording)
-                      ? null
-                      : _sendMessage,
-                  elevation: 2,
-                  child: _isStreaming
-                      ? SizedBox(
-                          width: 18,
-                          height: 18,
-                          child: CircularProgressIndicator(
-                            strokeWidth: 2,
-                            color: colorScheme.onPrimary,
-                          ),
-                        )
-                      : const Icon(Icons.send, size: 18),
-                ),
+                _buildSendButton(colorScheme),
               ],
             ),
           ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildSendButton(ColorScheme colorScheme) {
+    final disabled = _isStreaming || !AiService.instance.isReady || _isRecording;
+    return GestureDetector(
+      onTap: disabled ? null : _sendMessage,
+      child: Container(
+        width: 36,
+        height: 36,
+        decoration: BoxDecoration(
+          shape: BoxShape.circle,
+          color: disabled
+              ? colorScheme.surfaceContainerHighest
+              : colorScheme.primary,
+        ),
+        child: Center(
+          child: _isStreaming
+              ? SizedBox(
+                  width: 16,
+                  height: 16,
+                  child: CircularProgressIndicator(
+                    strokeWidth: 2,
+                    color: colorScheme.onPrimary,
+                  ),
+                )
+              : Icon(Icons.send, size: 16, color: disabled
+                  ? colorScheme.onSurfaceVariant
+                  : colorScheme.onPrimary),
         ),
       ),
     );
