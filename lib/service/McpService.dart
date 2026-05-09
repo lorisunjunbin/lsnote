@@ -18,6 +18,7 @@ class McpService {
   bool _isReady = false;
   String _contextCache = '';
   List<McpTool> _mcpTools = [];
+  int _requestId = 0;
 
   bool get isEnabled => _enabled && _serverUrl.isNotEmpty;
   bool get isReady => _isReady;
@@ -80,6 +81,7 @@ class McpService {
     try {
       final toolsBody = jsonEncode({
         'jsonrpc': '2.0',
+        'id': ++_requestId,
         'method': 'tools/list',
         'params': {},
       });
@@ -125,6 +127,7 @@ class McpService {
   Future<String> callTool(String name, Map<String, dynamic> args) async {
     final body = jsonEncode({
       'jsonrpc': '2.0',
+      'id': ++_requestId,
       'method': 'tools/call',
       'params': {'name': name, 'arguments': args},
     });
@@ -141,11 +144,13 @@ class McpService {
     final client = HttpClient();
     try {
       final request = await client.postUrl(Uri.parse(url));
-      request.headers.set('Content-Type', 'application/json');
+      request.headers.set('Content-Type', 'application/json; charset=utf-8');
       if (_authHeader.isNotEmpty) {
         request.headers.set('Authorization', 'Bearer $_authHeader');
       }
-      request.write(body);
+      final bodyBytes = utf8.encode(body);
+      request.headers.set('Content-Length', bodyBytes.length.toString());
+      request.add(bodyBytes);
       final response = await request.close();
       if (response.statusCode < 200 || response.statusCode >= 300) {
         throw HttpException('HTTP ${response.statusCode}', uri: Uri.parse(url));

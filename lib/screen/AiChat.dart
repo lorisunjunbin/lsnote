@@ -37,6 +37,7 @@ class _AiChatState extends State<AiChat> {
   bool _isStreaming = false;
   String? _pendingImagePath;
   LiteLmConversation? _conversation;
+  bool _conversationHasTools = false;
   StreamSubscription? _streamSub;
 
   final AudioRecorder _recorder = AudioRecorder();
@@ -209,6 +210,12 @@ class _AiChatState extends State<AiChat> {
     if (!AiService.instance.isReady) return;
 
     try {
+      final mcpTools = McpService.instance.tools;
+      if (_conversation != null && !_conversationHasTools && mcpTools.isNotEmpty) {
+        _conversation?.dispose();
+        _conversation = null;
+        _conversationHasTools = false;
+      }
       if (_conversation == null) {
         final mcpContext = McpService.instance.contextCache;
         final baseInstruction = _attachedNote != null
@@ -219,8 +226,9 @@ class _AiChatState extends State<AiChat> {
             : baseInstruction;
         _conversation = await AiService.instance.createChatConversation(
           systemInstruction: systemInstruction,
-          tools: McpService.instance.tools,
+          tools: mcpTools,
         );
+        _conversationHasTools = mcpTools.isNotEmpty;
       }
     } catch (e) {
       if (mounted) {
@@ -495,6 +503,7 @@ class _AiChatState extends State<AiChat> {
   void _clearChat() {
     _conversation?.dispose();
     _conversation = null;
+    _conversationHasTools = false;
     setState(() {
       _messages.clear();
       _attachedNote = null;
@@ -533,6 +542,7 @@ class _AiChatState extends State<AiChat> {
       if (note != null) {
         _conversation?.dispose();
         _conversation = null;
+        _conversationHasTools = false;
         setState(() => _attachedNote = note);
       }
     });
@@ -566,6 +576,7 @@ class _AiChatState extends State<AiChat> {
     String? downloadError;
     StreamSubscription<double>? downloadSub;
     String modelSizeText = '';
+    bool dialogActive = true;
     bool showModelList = false;
 
     String mcpUrl = McpService.instance.serverUrl;
@@ -591,7 +602,11 @@ class _AiChatState extends State<AiChat> {
     await showDialog(
       context: context,
       builder: (ctx) => StatefulBuilder(
-        builder: (ctx, setDialogState) {
+        builder: (ctx, rawSetDialogState) {
+          void setDialogState(VoidCallback fn) {
+            if (!dialogActive) return;
+            rawSetDialogState(fn);
+          }
           final hasModel = AiService.instance.modelPath.isNotEmpty;
 
           Widget buildModelListItem(AiModelInfo model) {
@@ -621,6 +636,7 @@ class _AiChatState extends State<AiChat> {
                             setDialogState(() => isInitializing = true);
                             _conversation?.dispose();
                             _conversation = null;
+                            _conversationHasTools = false;
                             await AiService.instance.activateModel(model);
                             final newBytes =
                                 await AiService.instance.modelFileSize;
@@ -992,6 +1008,7 @@ class _AiChatState extends State<AiChat> {
                                     });
                                     _conversation?.dispose();
                                     _conversation = null;
+                                    _conversationHasTools = false;
                                     final stream = hasModel
                                         ? AiService.instance.switchModel(model)
                                         : AiService.instance.downloadModel(model);
@@ -1207,6 +1224,7 @@ class _AiChatState extends State<AiChat> {
                                 await McpService.instance.fetchContextOnModelReady();
                                 _conversation?.dispose();
                                 _conversation = null;
+                                _conversationHasTools = false;
                                 if (ctx.mounted) {
                                   setDialogState(() => isMcpFetching = false);
                                 }
@@ -1235,8 +1253,6 @@ class _AiChatState extends State<AiChat> {
                         style: const TextStyle(fontSize: 13),
                       ),
                       onPressed: () {
-                        mcpUrlCtl.dispose();
-                        mcpTokenCtl.dispose();
                         Navigator.of(ctx).pop();
                         _clearChat();
                       },
@@ -1248,8 +1264,6 @@ class _AiChatState extends State<AiChat> {
             actions: [
               TextButton(
                 onPressed: () {
-                  mcpUrlCtl.dispose();
-                  mcpTokenCtl.dispose();
                   downloadSub?.cancel();
                   WakelockPlus.disable();
                   Navigator.of(ctx).pop();
@@ -1262,6 +1276,7 @@ class _AiChatState extends State<AiChat> {
         },
       ),
     );
+    dialogActive = false;
     urlCtl.dispose();
     mcpUrlCtl.dispose();
     mcpTokenCtl.dispose();
@@ -1335,6 +1350,7 @@ class _AiChatState extends State<AiChat> {
                       onTap: () {
                         _conversation?.dispose();
                         _conversation = null;
+                        _conversationHasTools = false;
                         setState(() => _attachedNote = null);
                       },
                       child: Icon(Icons.close,

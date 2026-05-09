@@ -65,7 +65,7 @@ Strong success criteria let you loop independently. Weak criteria ("make it work
 
 ## Project Overview
 
-**lsnote** (Local Simple NOTE) is a Flutter mobile/desktop note-taking app (v1.2.0+3). It supports Android, iOS, macOS, and Windows. Features include SQLite-backed notes, drag-drop reordering, fingerprint auth, JSON backup/restore, theme customization, and a number puzzle mini-game.
+**lsnote** (Local Simple NOTE) is a Flutter mobile/desktop note-taking app (v1.3.2+6). It supports Android, iOS, macOS, and Windows. Features include SQLite-backed notes, drag-drop reordering, fingerprint auth, JSON backup/restore, theme customization, on-device AI chat, and a number puzzle mini-game.
 
 ## Commands
 
@@ -107,10 +107,10 @@ Route flow: `Login` → `NoteLanding` → `NoteItem` / `Backup` / `NumberPuzzles
 
 | Layer | Location | Role |
 |---|---|---|
-| Screens | `lib/screen/` | UI — 5 screens, each a named route |
+| Screens | `lib/screen/` | UI — 6 screens, each a named route |
 | State | `lib/changenotifier/` | 3 ChangeNotifiers (theme, hide-done toggle, game state) |
 | Service | `lib/service/NoteAccessSqlite.dart` | Singleton SQLite DAO; all DB access goes here |
-| Models | `lib/model/` | Plain Dart classes: `Note`, `Config`, `GuessItem`, `ChatMessage` (has optional `imagePath` for multimodal) |
+| Models | `lib/model/` | Plain Dart classes: `Note`, `Config`, `GuessItem`, `ChatMessage` (has optional `imagePath` for multimodal), `McpTool` |
 | i18n | `lib/i18n/SimpleLocalizations.dart` | Hardcoded en/zh strings (~100+ keys) |
 | Utils | `lib/utils/NavigationHelper.dart` | Shared navigation helpers |
 
@@ -195,6 +195,10 @@ try {
 - 收到 `toolCalls` 时走 `_sendTextWithToolSupport` 非流式路径，显示 `MessageType.toolCall/toolResult` 气泡，再调 `sendToolResponse` 继续推理
 - context 类工具按名称模糊匹配（weather/holiday/time/date/calendar）在启动时主动调用；其余工具仅注入定义供模型按需调用
 - MCP 未启用时 `tools` 返回空列表，`contextCache` 返回空字符串，对现有逻辑零影响
+- **Tool-calling 路径**：`_sendTextWithToolSupport` 使用 `conversation.sendMessage`（非流式，返回 `LiteLmMessage`），检查 `response.toolCalls`，若非空则逐个调用 MCP server 的 `tools/call`，再通过 `sendToolResponse` 继续推理，最多循环 5 轮
+- **`_conversationHasTools` 延迟加载**：MCP tools 异步获取，可能晚于首次对话创建。发送消息时检测到 tools 已就绪但 conversation 未注入 tools，则自动重建 conversation
+- **JSON-RPC 要求 `id` 字段**：MCP server 遵循 JSON-RPC 2.0，请求必须包含 `'id'` 字段，否则返回 `Method not found` 错误
+- **HTTP body 编码**：Dart `HttpClient.request.write()` 默认用 Latin-1，必须用 `request.add(utf8.encode(body))` + 显式 `Content-Length` 确保 UTF-8 传输
 
 ### AI Engine 并发与生命周期管理
 
