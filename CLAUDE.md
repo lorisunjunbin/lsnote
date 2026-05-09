@@ -185,6 +185,17 @@ try {
 }
 ```
 
+### MCP Tool Calling
+
+`lib/service/McpService.dart` — 单例管理 MCP HTTP 通信。
+
+- 配置项：`mcpEnabled`、`mcpServerUrl`、`mcpAuthHeader`（SQLite config 表）
+- 模型加载成功后自动调用 `fetchContextOnModelReady()`，预取天气/节日等 context 类工具结果，缓存为 `contextCache` 纯文本注入对话 system prompt
+- AI Chat 对话创建时通过 `createChatConversation(tools: McpService.instance.tools)` 注入工具定义
+- 收到 `toolCalls` 时走 `_sendTextWithToolSupport` 非流式路径，显示 `MessageType.toolCall/toolResult` 气泡，再调 `sendToolResponse` 继续推理
+- context 类工具按名称模糊匹配（weather/holiday/time/date/calendar）在启动时主动调用；其余工具仅注入定义供模型按需调用
+- MCP 未启用时 `tools` 返回空列表，`contextCache` 返回空字符串，对现有逻辑零影响
+
 ### AI Engine 并发与生命周期管理
 
 - **LiteRT-LM engine 单线程**：不能并发调用，流式输出进行中再发请求会导致崩溃
