@@ -31,7 +31,8 @@ class NoteLanding extends StatefulWidget {
   _NoteLandingState createState() => _NoteLandingState();
 }
 
-class _NoteLandingState extends State<NoteLanding> {
+class _NoteLandingState extends State<NoteLanding>
+    with TickerProviderStateMixin {
   final AsyncMemoizer _memoizer = AsyncMemoizer();
   static const int _sequenceStep = 1024;
 
@@ -52,6 +53,24 @@ class _NoteLandingState extends State<NoteLanding> {
   int _recordingDuration = 0;
   Timer? _recordingTimer;
   bool _isTranscribing = false;
+  final Set<int> _removingIds = {};
+  final Map<int, AnimationController> _removeAnimations = {};
+
+  void _animateRemoval(int id, VoidCallback onComplete) {
+    if (_removingIds.contains(id)) return;
+    final controller = AnimationController(
+      duration: const Duration(milliseconds: 300),
+      vsync: this,
+    );
+    _removeAnimations[id] = controller;
+    setState(() => _removingIds.add(id));
+    controller.forward().then((_) {
+      _removingIds.remove(id);
+      _removeAnimations.remove(id);
+      controller.dispose();
+      onComplete();
+    });
+  }
 
   void _toggleCardExpansion(int noteId) {
     setState(() {
@@ -389,6 +408,9 @@ class _NoteLandingState extends State<NoteLanding> {
     _ctrls.forEach((key, value) {
       value.dispose();
     });
+    for (final controller in _removeAnimations.values) {
+      controller.dispose();
+    }
     super.dispose();
   }
 
@@ -763,9 +785,11 @@ class _NoteLandingState extends State<NoteLanding> {
                   TextButton(
                       child: Text(sl.getText('confirmYes')!),
                       onPressed: () {
-                        db.deleteNoteItem(item);
                         Navigator.of(context).pop();
-                        _updateUI(context);
+                        _animateRemoval(item.id!, () {
+                          db.deleteNoteItem(item);
+                          _updateUI(context);
+                        });
                       })
                 ]);
           });
@@ -1150,7 +1174,7 @@ class _NoteLandingState extends State<NoteLanding> {
 
       final isExpanded = _cardExpandedStates[item.id!] ?? false;
 
-      return Padding(
+      Widget card = Padding(
         key: Key('${item.id}'),
         padding: const EdgeInsets.symmetric(vertical: 0),
         child: Card(
@@ -1184,6 +1208,13 @@ class _NoteLandingState extends State<NoteLanding> {
                     onChanged: (bool? newValue) {
                       setState(() => item.isDone = newValue ?? false);
                       db.toggleNoteItem(item);
+                      final sp = Provider.of<SwitcherChangeNotifier>(
+                          context, listen: false);
+                      if (sp.isHiddenDone() && newValue == true) {
+                        _animateRemoval(item.id!, () {
+                          _updateUI(context);
+                        });
+                      }
                     },
                   ),
                 ),
@@ -1399,6 +1430,25 @@ class _NoteLandingState extends State<NoteLanding> {
           ),
         ),
       );
+
+      if (_removingIds.contains(item.id)) {
+        final controller = _removeAnimations[item.id!]!;
+        final slideAnimation = Tween<Offset>(
+          begin: Offset.zero,
+          end: const Offset(-1.0, 0.0),
+        ).animate(CurvedAnimation(parent: controller, curve: Curves.easeIn));
+        final fadeAnimation = Tween<double>(
+          begin: 1.0,
+          end: 0.0,
+        ).animate(CurvedAnimation(parent: controller, curve: Curves.easeIn));
+        card = SlideTransition(
+          key: Key('${item.id}'),
+          position: slideAnimation,
+          child: FadeTransition(opacity: fadeAnimation, child: card),
+        );
+      }
+
+      return card;
     }).toList();
 
     return _listTiles;
