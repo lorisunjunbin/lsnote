@@ -9,7 +9,11 @@ import com.google.ai.edge.litertlm.ConversationConfig
 import com.google.ai.edge.litertlm.Engine
 import com.google.ai.edge.litertlm.EngineConfig
 import com.google.ai.edge.litertlm.Message
+import com.google.ai.edge.litertlm.OpenApiTool
 import com.google.ai.edge.litertlm.SamplerConfig
+import com.google.ai.edge.litertlm.ToolProvider
+import com.google.ai.edge.litertlm.tool
+import com.google.gson.Gson
 import io.flutter.embedding.engine.plugins.FlutterPlugin
 import io.flutter.plugin.common.EventChannel
 import io.flutter.plugin.common.MethodCall
@@ -280,14 +284,31 @@ class FlutterLitertLmPlugin : FlutterPlugin, MethodCallHandler, EventChannel.Str
             }
         }
 
-        // ConversationConfig fields are non-null with defaults; build from default
-        // and override only what we have via copy().
+        val toolProviders = toolsList?.map { toolMap ->
+            val funcMap = HashMap<String, Any?>()
+            funcMap["name"] = toolMap["name"]
+            funcMap["description"] = toolMap["description"]
+            funcMap["parameters"] = toolMap["parameters"]
+            val wrapperMap = HashMap<String, Any?>()
+            wrapperMap["type"] = "function"
+            wrapperMap["function"] = funcMap
+            val toolJson = Gson().toJson(wrapperMap)
+            val openApiTool = object : OpenApiTool {
+                override fun getToolDescriptionJsonString(): String = toolJson
+                override fun execute(args: String): String = ""
+            }
+            tool(openApiTool)
+        }
+
         var config = ConversationConfig()
         systemInstruction?.let { config = config.copy(systemInstruction = Contents.of(it)) }
         if (!initialMessages.isNullOrEmpty()) {
             config = config.copy(initialMessages = initialMessages)
         }
         samplerConfig?.let { config = config.copy(samplerConfig = it) }
+        if (!toolProviders.isNullOrEmpty()) {
+            config = config.copy(tools = toolProviders, automaticToolCalling = false)
+        }
         return config
     }
 
