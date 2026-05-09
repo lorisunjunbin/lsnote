@@ -279,6 +279,9 @@ class NoteApp extends StatelessWidget {
       await db.ensureConfig(Config.aiModelPath, '');
       await db.ensureConfig(Config.aiBackend, 'gpu');
       await db.ensureConfig(Config.aiLanguage, 'zh');
+      await db.ensureConfig(Config.mcpEnabled, '0');
+      await db.ensureConfig(Config.mcpServerUrl, '');
+      await db.ensureConfig(Config.mcpAuthHeader, '');
       await AiService.instance.loadConfig();
       if (AiService.instance.modelPath.isNotEmpty) {
         AiService.instance.initialize();

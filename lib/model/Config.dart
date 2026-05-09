@@ -5,6 +5,9 @@ class Config {
   static final String aiModelPath = "aiModelPath";
   static final String aiBackend = "aiBackend";
   static final String aiLanguage = "aiLanguage";
+  static final String mcpEnabled = "mcpEnabled";
+  static final String mcpServerUrl = "mcpServerUrl";
+  static final String mcpAuthHeader = "mcpAuthHeader";
 
   final int? id;
   final String? name;
