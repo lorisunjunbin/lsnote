@@ -337,8 +337,12 @@ class AiService {
       throw AiServiceException('AI engine not ready');
     }
 
+    final mcpContext = McpService.instance.contextCache;
+    final basePrompt = mcpContext.isNotEmpty
+        ? '$systemPrompt\n\nContext information:\n$mcpContext'
+        : systemPrompt;
     final effectivePrompt =
-        _isQwenModel ? '$systemPrompt\n/no_think' : systemPrompt;
+        _isQwenModel ? '$basePrompt\n/no_think' : basePrompt;
 
     final conversation = await _engine!.createConversation(
       LiteLmConversationConfig(
