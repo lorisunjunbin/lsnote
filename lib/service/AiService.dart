@@ -5,6 +5,7 @@ import 'package:flutter_litert_lm/flutter_litert_lm.dart';
 import 'package:path_provider/path_provider.dart';
 
 import 'NoteAccessSqlite.dart';
+import 'McpService.dart';
 import '../model/Config.dart';
 
 enum AiServiceState { uninitialized, loading, ready, error }
@@ -301,6 +302,7 @@ class AiService {
         ),
       );
       _state = AiServiceState.ready;
+      McpService.instance.fetchContextOnModelReady();
       return true;
     } catch (e) {
       if (_backend == 'gpu') {
@@ -314,6 +316,7 @@ class AiService {
           _backend = 'cpu';
           db.setConfig(Config.aiBackend, 'cpu');
           _state = AiServiceState.ready;
+          McpService.instance.fetchContextOnModelReady();
           return true;
         } catch (fallbackError) {
           _errorMessage = fallbackError.toString();

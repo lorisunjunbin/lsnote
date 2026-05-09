@@ -10,6 +10,7 @@ import 'changenotifier/ThemeChangeNotifier.dart';
 import 'service/NoteAccessSqlite.dart';
 import 'model/Config.dart';
 import 'service/AiService.dart';
+import 'service/McpService.dart';
 import 'screen/NoteItem.dart';
 import 'screen/NoteLanding.dart';
 import 'screen/Login.dart';
@@ -283,6 +284,7 @@ class NoteApp extends StatelessWidget {
       await db.ensureConfig(Config.mcpServerUrl, '');
       await db.ensureConfig(Config.mcpAuthHeader, '');
       await AiService.instance.loadConfig();
+      await McpService.instance.init();
       if (AiService.instance.modelPath.isNotEmpty) {
         AiService.instance.initialize();
       }
