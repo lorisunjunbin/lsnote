@@ -552,7 +552,7 @@ class AiService {
   }
 
   Future<LiteLmConversation> createChatConversation(
-      {String? systemInstruction}) async {
+      {String? systemInstruction, List<LiteLmTool>? tools}) async {
     if (_engine == null || _state != AiServiceState.ready) {
       throw AiServiceException('AI engine not ready');
     }
@@ -565,6 +565,7 @@ class AiService {
           topK: 40,
           topP: 0.95,
         ),
+        tools: tools,
       ),
     );
   }

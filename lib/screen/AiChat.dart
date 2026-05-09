@@ -16,6 +16,7 @@ import '../model/ChatMessage.dart';
 import '../model/Note.dart';
 import '../service/AiPrompts.dart';
 import '../service/AiService.dart';
+import '../service/McpService.dart';
 import '../service/NoteAccessSqlite.dart';
 import '../utils/NavigationHelper.dart';
 import 'NoteLanding.dart';
@@ -207,11 +208,19 @@ class _AiChatState extends State<AiChat> {
     if (!AiService.instance.isReady) return;
 
     try {
-      _conversation ??= await AiService.instance.createChatConversation(
-        systemInstruction: _attachedNote != null
+      if (_conversation == null) {
+        final mcpContext = McpService.instance.contextCache;
+        final baseInstruction = _attachedNote != null
             ? '${AiService.instance.contextInfo} The user has shared a note for context:\nTitle: ${_attachedNote!.title}\nContent: ${_attachedNote!.content}\n\nHelp the user with questions about this note.'
-            : '${AiService.instance.contextInfo} You are a helpful assistant.',
-      );
+            : '${AiService.instance.contextInfo} You are a helpful assistant.';
+        final systemInstruction = mcpContext.isNotEmpty
+            ? '$baseInstruction\n\nContext information:\n$mcpContext'
+            : baseInstruction;
+        _conversation = await AiService.instance.createChatConversation(
+          systemInstruction: systemInstruction,
+          tools: McpService.instance.tools,
+        );
+      }
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -266,21 +275,40 @@ class _AiChatState extends State<AiChat> {
         setState(() => _isStreaming = false);
       }
     } else {
+      await _sendTextWithToolSupport(text, assistantMsg);
+    }
+    _scrollToBottom();
+  }
+
+  void _scrollToBottom() {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (_scrollCtl.hasClients) {
+        _scrollCtl.animateTo(
+          _scrollCtl.position.maxScrollExtent,
+          duration: const Duration(milliseconds: 200),
+          curve: Curves.easeOut,
+        );
+      }
+    });
+  }
+
+  Future<void> _sendTextWithToolSupport(
+      String text, ChatMessage assistantMsg) async {
+    if (_conversation == null) return;
+    if (!McpService.instance.isEnabled || McpService.instance.tools.isEmpty) {
       final buffer = StringBuffer();
       final completer = Completer<void>();
       _streamSub = _conversation!.sendMessageStream(text).listen(
         (token) {
           if (!mounted) return;
           buffer.write(token.text);
-          final raw = buffer.toString();
-          final parsed = _parseThinking(raw);
+          final parsed = _parseThinking(buffer.toString());
           setState(() {
             _messages[_messages.length - 1] = ChatMessage(
               role: 'assistant',
               content: parsed['content']!,
-              thinkingContent: parsed['thinking']!.isEmpty
-                  ? null
-                  : parsed['thinking'],
+              thinkingContent:
+                  parsed['thinking']!.isEmpty ? null : parsed['thinking'],
               timestamp: assistantMsg.timestamp,
             );
           });
@@ -300,29 +328,117 @@ class _AiChatState extends State<AiChat> {
           if (!completer.isCompleted) completer.complete();
         },
         onDone: () {
-          if (mounted) {
-            setState(() => _isStreaming = false);
-          }
+          if (mounted) setState(() => _isStreaming = false);
           if (!completer.isCompleted) completer.complete();
         },
         cancelOnError: true,
       );
       await completer.future;
       _streamSub = null;
+      return;
     }
-    _scrollToBottom();
-  }
 
-  void _scrollToBottom() {
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (_scrollCtl.hasClients) {
-        _scrollCtl.animateTo(
-          _scrollCtl.position.maxScrollExtent,
-          duration: const Duration(milliseconds: 200),
-          curve: Curves.easeOut,
-        );
+    String currentText = text;
+    int maxToolRounds = 5;
+    while (maxToolRounds-- > 0) {
+      LiteLmMessage response;
+      try {
+        response = await _conversation!.sendMessage(currentText);
+      } catch (e) {
+        if (mounted) {
+          setState(() {
+            _messages[_messages.length - 1] = ChatMessage(
+              role: 'assistant',
+              content: 'Error: $e',
+              timestamp: assistantMsg.timestamp,
+            );
+            _isStreaming = false;
+          });
+        }
+        return;
       }
-    });
+
+      if (response.toolCalls.isEmpty) {
+        final parsed = _parseThinking(response.text);
+        if (mounted) {
+          setState(() {
+            _messages[_messages.length - 1] = ChatMessage(
+              role: 'assistant',
+              content: parsed['content']!,
+              thinkingContent:
+                  parsed['thinking']!.isEmpty ? null : parsed['thinking'],
+              timestamp: assistantMsg.timestamp,
+            );
+            _isStreaming = false;
+          });
+        }
+        return;
+      }
+
+      for (final toolCall in response.toolCalls) {
+        final toolName = toolCall.name;
+        final toolArgs = toolCall.arguments;
+
+        if (mounted) {
+          setState(() {
+            _messages[_messages.length - 1] = ChatMessage(
+              role: 'assistant',
+              content: toolName,
+              timestamp: assistantMsg.timestamp,
+              messageType: MessageType.toolCall,
+            );
+            _messages.add(ChatMessage(role: 'assistant', content: ''));
+          });
+          _scrollToBottom();
+        }
+
+        String toolResult;
+        try {
+          toolResult = await McpService.instance.callTool(toolName, toolArgs);
+        } catch (e) {
+          toolResult = 'Error calling $toolName: $e';
+        }
+
+        if (mounted) {
+          setState(() {
+            final idx = _messages.length - 2;
+            _messages[idx] = ChatMessage(
+              role: 'assistant',
+              content: '$toolName\n$toolResult',
+              timestamp: assistantMsg.timestamp,
+              messageType: MessageType.toolResult,
+            );
+          });
+          _scrollToBottom();
+        }
+
+        try {
+          final continuation =
+              await _conversation!.sendToolResponse(toolName, toolResult);
+          if (continuation.toolCalls.isEmpty && continuation.text.isNotEmpty) {
+            final parsed = _parseThinking(continuation.text);
+            if (mounted) {
+              setState(() {
+                _messages[_messages.length - 1] = ChatMessage(
+                  role: 'assistant',
+                  content: parsed['content']!,
+                  thinkingContent:
+                      parsed['thinking']!.isEmpty ? null : parsed['thinking'],
+                  timestamp: assistantMsg.timestamp,
+                );
+                _isStreaming = false;
+              });
+            }
+            return;
+          }
+          currentText = '';
+        } catch (_) {
+          currentText = '';
+        }
+      }
+    }
+
+    if (mounted) setState(() => _isStreaming = false);
   }
 
   Map<String, String> _parseThinking(String raw) {
@@ -1192,8 +1308,14 @@ class _AiChatState extends State<AiChat> {
                       padding: const EdgeInsets.symmetric(
                           horizontal: 8, vertical: 12),
                       itemCount: _messages.length,
-                      itemBuilder: (ctx, i) =>
-                          _buildMessageBubble(_messages[i], colorScheme),
+                      itemBuilder: (ctx, i) {
+                          final msg = _messages[i];
+                          if (msg.messageType == MessageType.toolCall ||
+                              msg.messageType == MessageType.toolResult) {
+                            return _buildToolBubble(msg, colorScheme);
+                          }
+                          return _buildMessageBubble(msg, colorScheme);
+                        },
                     ),
             ),
             _buildInputBar(colorScheme, sl),
@@ -1376,6 +1498,101 @@ class _AiChatState extends State<AiChat> {
           if (isUser)
             const SizedBox(width: 40),
         ],
+      ),
+    );
+  }
+
+  Widget _buildToolBubble(ChatMessage msg, ColorScheme colorScheme) {
+    final isCall = msg.messageType == MessageType.toolCall;
+    final lines = msg.content.split('\n');
+    final toolName = lines.first;
+    final resultText = lines.length > 1 ? lines.sublist(1).join('\n') : '';
+
+    return Padding(
+      padding: const EdgeInsets.only(left: 8, right: 48, top: 4, bottom: 4),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+        decoration: BoxDecoration(
+          color: colorScheme.surfaceContainerLow,
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(
+            color: colorScheme.outline.withValues(alpha: 0.15),
+          ),
+        ),
+        child: isCall
+            ? Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  SizedBox(
+                    width: 12,
+                    height: 12,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 1.5,
+                      color: colorScheme.primary,
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Text(
+                    '🔧 $toolName...',
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: colorScheme.onSurfaceVariant,
+                    ),
+                  ),
+                ],
+              )
+            : Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Icon(Icons.check_circle_outline,
+                          size: 14, color: colorScheme.primary),
+                      const SizedBox(width: 6),
+                      Text(
+                        toolName,
+                        style: TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w600,
+                          color: colorScheme.onSurfaceVariant,
+                        ),
+                      ),
+                    ],
+                  ),
+                  if (resultText.isNotEmpty) ...[
+                    const SizedBox(height: 4),
+                    Text(
+                      msg.isExpanded || resultText.split('\n').length <= 3
+                          ? resultText
+                          : '${resultText.split('\n').take(3).join('\n')}...',
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: colorScheme.onSurfaceVariant
+                            .withValues(alpha: 0.8),
+                      ),
+                    ),
+                    if (resultText.split('\n').length > 3)
+                      GestureDetector(
+                        onTap: () {
+                          final idx = _messages.indexOf(msg);
+                          if (idx >= 0 && mounted) {
+                            setState(() {
+                              _messages[idx] =
+                                  msg.copyWith(isExpanded: !msg.isExpanded);
+                            });
+                          }
+                        },
+                        child: Text(
+                          msg.isExpanded ? '收起' : '展开',
+                          style: TextStyle(
+                            fontSize: 11,
+                            color: colorScheme.primary,
+                          ),
+                        ),
+                      ),
+                  ],
+                ],
+              ),
       ),
     );
   }
