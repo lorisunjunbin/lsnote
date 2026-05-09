@@ -138,9 +138,12 @@ class McpService {
       if (_authHeader.isNotEmpty) {
         request.headers.set('Authorization', 'Bearer $_authHeader');
       }
-      final response = await request.close()
+      final response = await request.close();
+      if (response.statusCode < 200 || response.statusCode >= 300) {
+        throw HttpException('HTTP ${response.statusCode}', uri: Uri.parse(url));
+      }
+      final body = await response.transform(utf8.decoder).join()
           .timeout(const Duration(seconds: 10));
-      final body = await response.transform(utf8.decoder).join();
       return jsonDecode(body) as Map<String, dynamic>;
     } finally {
       client.close();
@@ -156,9 +159,12 @@ class McpService {
         request.headers.set('Authorization', 'Bearer $_authHeader');
       }
       request.write(body);
-      final response = await request.close()
+      final response = await request.close();
+      if (response.statusCode < 200 || response.statusCode >= 300) {
+        throw HttpException('HTTP ${response.statusCode}', uri: Uri.parse(url));
+      }
+      final responseBody = await response.transform(utf8.decoder).join()
           .timeout(const Duration(seconds: 10));
-      final responseBody = await response.transform(utf8.decoder).join();
       return jsonDecode(responseBody) as Map<String, dynamic>;
     } finally {
       client.close();
