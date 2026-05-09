@@ -1205,6 +1205,8 @@ class _AiChatState extends State<AiChat> {
                                     url: mcpUrl, token: mcpToken);
                                 setDialogState(() => isMcpFetching = true);
                                 await McpService.instance.fetchContextOnModelReady();
+                                _conversation?.dispose();
+                                _conversation = null;
                                 if (ctx.mounted) {
                                   setDialogState(() => isMcpFetching = false);
                                 }
