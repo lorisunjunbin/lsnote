@@ -1165,6 +1165,29 @@ class _NoteLandingState extends State<NoteLanding>
     );
   }
 
+  Widget _formatButton(IconData icon, String tooltip, VoidCallback onTap, ColorScheme colorScheme) {
+    return IconButton(
+      icon: Icon(icon, size: 18),
+      color: colorScheme.onSurfaceVariant,
+      tooltip: tooltip,
+      padding: EdgeInsets.zero,
+      constraints: const BoxConstraints(minWidth: 32, minHeight: 28),
+      onPressed: onTap,
+    );
+  }
+
+  void _insertAtCursor(TextEditingController ctrl, String text) {
+    final selection = ctrl.selection;
+    final baseOffset = selection.isValid ? selection.baseOffset : ctrl.text.length;
+    final newText = ctrl.text.replaceRange(
+      baseOffset, selection.isValid ? selection.extentOffset : baseOffset, text);
+    ctrl.value = TextEditingValue(
+      text: newText,
+      selection: TextSelection.collapsed(offset: baseOffset + text.length),
+    );
+    setState(() {});
+  }
+
   List<Widget> _buildItemList(ThemeData theme) {
     final sl = SimpleLocalizations.of(context)!;
     final colorScheme = theme.colorScheme;
@@ -1272,6 +1295,23 @@ class _NoteLandingState extends State<NoteLanding>
                       ),
                       if (isExpanded) ...[
                         const SizedBox(height: 6),
+                        Row(
+                          children: [
+                            _formatButton(Icons.today, sl.getText('insertDate') ?? 'Date', () {
+                              final ctrl = _ctrls['${item.id}cblt']!;
+                              final date = DateTime.now().toString().substring(0, 10);
+                              _insertAtCursor(ctrl, date);
+                            }, colorScheme),
+                            _formatButton(Icons.checklist, sl.getText('insertChecklist') ?? 'Task', () {
+                              final ctrl = _ctrls['${item.id}cblt']!;
+                              _insertAtCursor(ctrl, '- [ ] ');
+                            }, colorScheme),
+                            _formatButton(Icons.horizontal_rule, sl.getText('insertDivider') ?? 'Line', () {
+                              final ctrl = _ctrls['${item.id}cblt']!;
+                              _insertAtCursor(ctrl, '\n---\n');
+                            }, colorScheme),
+                          ],
+                        ),
                         TextField(
                           key: Key('${item.id}tf'),
                           controller: _ctrls['${item.id}cblt'],
@@ -1308,6 +1348,21 @@ class _NoteLandingState extends State<NoteLanding>
                             ),
                           ),
                           textCapitalization: TextCapitalization.sentences,
+                        ),
+                        Padding(
+                          padding: const EdgeInsets.only(left: 8, top: 2, bottom: 2),
+                          child: Builder(builder: (_) {
+                            final text = _ctrls['${item.id}cblt']?.text ?? '';
+                            final chars = text.length;
+                            final lines = text.isEmpty ? 0 : text.split('\n').length;
+                            return Text(
+                              '$chars chars · $lines lines',
+                              style: TextStyle(
+                                fontSize: 11,
+                                color: colorScheme.onSurfaceVariant.withValues(alpha: 0.6),
+                              ),
+                            );
+                          }),
                         ),
                         Row(
                           children: [
