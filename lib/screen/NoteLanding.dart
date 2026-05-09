@@ -65,8 +65,11 @@ class _NoteLandingState extends State<NoteLanding>
     _removeAnimations[id] = controller;
     setState(() => _removingIds.add(id));
     controller.forward().then((_) {
-      _removingIds.remove(id);
-      _removeAnimations.remove(id);
+      if (!mounted) return;
+      setState(() {
+        _removingIds.remove(id);
+        _removeAnimations.remove(id);
+      });
       controller.dispose();
       onComplete();
     });
@@ -1431,8 +1434,8 @@ class _NoteLandingState extends State<NoteLanding>
         ),
       );
 
-      if (_removingIds.contains(item.id)) {
-        final controller = _removeAnimations[item.id!]!;
+      final controller = _removeAnimations[item.id];
+      if (_removingIds.contains(item.id) && controller != null) {
         final slideAnimation = Tween<Offset>(
           begin: Offset.zero,
           end: const Offset(-1.0, 0.0),
@@ -1442,7 +1445,6 @@ class _NoteLandingState extends State<NoteLanding>
           end: 0.0,
         ).animate(CurvedAnimation(parent: controller, curve: Curves.easeIn));
         card = SlideTransition(
-          key: Key('${item.id}'),
           position: slideAnimation,
           child: FadeTransition(opacity: fadeAnimation, child: card),
         );
