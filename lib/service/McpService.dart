@@ -78,8 +78,14 @@ class McpService {
     _mcpTools = [];
 
     try {
-      final toolsJson = await _get('$_serverUrl/tools/list');
-      final toolsList = toolsJson['tools'] as List<dynamic>? ?? [];
+      final toolsBody = jsonEncode({
+        'jsonrpc': '2.0',
+        'method': 'tools/list',
+        'params': {},
+      });
+      final toolsJson = await _post(_serverUrl, toolsBody);
+      final toolsResult = toolsJson['result'] as Map<String, dynamic>? ?? toolsJson;
+      final toolsList = toolsResult['tools'] as List<dynamic>? ?? [];
       _mcpTools = toolsList
           .whereType<Map<String, dynamic>>()
           .map((j) => McpTool.fromJson(j))
@@ -122,32 +128,13 @@ class McpService {
       'method': 'tools/call',
       'params': {'name': name, 'arguments': args},
     });
-    final result = await _post('$_serverUrl/tools/call', body);
+    final result = await _post(_serverUrl, body);
     final content = result['result']?['content'] as List<dynamic>? ?? [];
     return content
         .whereType<Map<String, dynamic>>()
         .where((p) => p['type'] == 'text')
         .map((p) => p['text'] as String? ?? '')
         .join('\n');
-  }
-
-  Future<Map<String, dynamic>> _get(String url) async {
-    final client = HttpClient();
-    try {
-      final request = await client.getUrl(Uri.parse(url));
-      if (_authHeader.isNotEmpty) {
-        request.headers.set('Authorization', 'Bearer $_authHeader');
-      }
-      final response = await request.close();
-      if (response.statusCode < 200 || response.statusCode >= 300) {
-        throw HttpException('HTTP ${response.statusCode}', uri: Uri.parse(url));
-      }
-      final body = await response.transform(utf8.decoder).join()
-          .timeout(const Duration(seconds: 10));
-      return jsonDecode(body) as Map<String, dynamic>;
-    } finally {
-      client.close();
-    }
   }
 
   Future<Map<String, dynamic>> _post(String url, String body) async {
