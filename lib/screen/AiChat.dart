@@ -537,6 +537,24 @@ class _AiChatState extends State<AiChat> {
     });
   }
 
+  Widget _buildSettingsSectionHeader(BuildContext context, String title,
+      {Widget? trailing}) {
+    final colorScheme = Theme.of(context).colorScheme;
+    return Row(
+      children: [
+        Text(
+          title,
+          style: TextStyle(
+            fontSize: 13,
+            fontWeight: FontWeight.w600,
+            color: colorScheme.primary,
+          ),
+        ),
+        if (trailing != null) ...[const Spacer(), trailing],
+      ],
+    );
+  }
+
   Future<void> _showSettingsDialog() async {
     final sl = SimpleLocalizations.of(context)!;
     String selectedBackend = AiService.instance.backend;
@@ -548,6 +566,13 @@ class _AiChatState extends State<AiChat> {
     StreamSubscription<double>? downloadSub;
     String modelSizeText = '';
     bool showModelList = false;
+
+    String mcpUrl = McpService.instance.serverUrl;
+    String mcpToken = McpService.instance.authHeader;
+    bool mcpEnabled = McpService.instance.enabled;
+    bool isMcpFetching = false;
+    final mcpUrlCtl = TextEditingController(text: mcpUrl);
+    final mcpTokenCtl = TextEditingController(text: mcpToken);
 
     final recommendedModel = await AiService.getRecommendedModel();
     final deviceRamGB = await AiService.getDeviceRamGB();
@@ -789,60 +814,123 @@ class _AiChatState extends State<AiChat> {
           }
 
           return AlertDialog(
-            shape:
-                RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+            shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(20)),
+            contentPadding: EdgeInsets.zero,
             title: Text(sl.getText('aiSettings') ?? 'AI Settings'),
-            content: SingleChildScrollView(
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.start,
+            content: SizedBox(
+              width: double.maxFinite,
+              height: MediaQuery.of(ctx).size.height * 0.75,
+              child: ListView(
+                padding: const EdgeInsets.fromLTRB(20, 8, 20, 20),
                 children: [
+                  // ── Section 1: Model & Inference ──────────────────────
+                  _buildSettingsSectionHeader(
+                      ctx, sl.getText('aiModelInference') ?? 'Model & Inference'),
+                  const SizedBox(height: 8),
+
+                  // Load model button + status
+                  Row(
+                    children: [
+                      Expanded(
+                        child: ElevatedButton.icon(
+                          icon: isInitializing
+                              ? const SizedBox(
+                                  width: 14,
+                                  height: 14,
+                                  child: CircularProgressIndicator(
+                                      strokeWidth: 2))
+                              : const Icon(Icons.smart_toy, size: 16),
+                          label: Text(
+                            isInitializing
+                                ? (sl.getText('aiModelLoading') ?? 'Loading...')
+                                : AiService.instance.isReady
+                                    ? (sl.getText('aiModelReady') ?? 'Ready')
+                                    : (sl.getText('aiModelNotSet') ?? 'Not configured'),
+                            style: const TextStyle(fontSize: 13),
+                          ),
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: AiService.instance.isReady
+                                ? Theme.of(ctx).colorScheme.primaryContainer
+                                : null,
+                          ),
+                          onPressed: (isInitializing || isDownloading)
+                              ? null
+                              : () async {
+                                  if (!AiService.instance.isReady &&
+                                      AiService.instance.modelPath.isNotEmpty) {
+                                    setDialogState(() => isInitializing = true);
+                                    await AiService.instance.initialize();
+                                    setDialogState(() => isInitializing = false);
+                                  }
+                                },
+                        ),
+                      ),
+                    ],
+                  ),
+
+                  const SizedBox(height: 8),
+
                   // Device RAM info
                   if (deviceRamGB != null)
                     Padding(
-                      padding: const EdgeInsets.only(bottom: 12),
+                      padding: const EdgeInsets.symmetric(vertical: 4),
                       child: Row(
                         children: [
-                          const Icon(Icons.memory, size: 16),
-                          const SizedBox(width: 8),
+                          const Icon(Icons.memory, size: 14),
+                          const SizedBox(width: 6),
                           Text(
-                            '${sl.getText('aiDeviceRam') ?? 'Device RAM'}: ${deviceRamGB.toStringAsFixed(1)} GB',
+                            '${sl.getText('aiDeviceRam') ?? 'RAM'}: ${deviceRamGB.toStringAsFixed(1)} GB',
                             style: const TextStyle(fontSize: 12),
                           ),
                         ],
                       ),
                     ),
 
-                  // Current model info
-                  if (hasModel && !isDownloading && !showModelList) ...[
+                  // Download progress
+                  if (isDownloading)
+                    Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        LinearProgressIndicator(value: downloadProgress),
+                        const SizedBox(height: 4),
+                        Text(
+                          '${(downloadProgress * 100).toStringAsFixed(1)}%',
+                          style: const TextStyle(fontSize: 11),
+                        ),
+                      ],
+                    ),
+                  if (downloadError != null)
+                    Text(downloadError!,
+                        style: const TextStyle(fontSize: 11, color: Colors.red)),
+
+                  // Current model + switch button
+                  if (hasModel && !showModelList) ...[
                     ListTile(
                       contentPadding: EdgeInsets.zero,
-                      leading: const Icon(Icons.smart_toy_outlined),
-                      title: Text(AiService.instance.modelPath.split('/').last,
-                          style: const TextStyle(fontSize: 13)),
-                      subtitle: Text(modelSizeText),
+                      leading: const Icon(Icons.smart_toy_outlined, size: 20),
+                      title: Text(
+                          AiService.instance.modelPath.split('/').last,
+                          style: const TextStyle(fontSize: 12)),
+                      subtitle: Text(modelSizeText,
+                          style: const TextStyle(fontSize: 11)),
                     ),
-                    const SizedBox(height: 8),
-                    SizedBox(
-                      width: double.infinity,
-                      child: OutlinedButton.icon(
-                        icon: const Icon(Icons.swap_horiz, size: 16),
-                        label: Text(
-                          sl.getText('aiSwitchModel') ?? 'Switch Model',
-                          style: const TextStyle(fontSize: 12),
-                        ),
-                        onPressed: (isInitializing || isDownloading)
-                            ? null
-                            : () => setDialogState(() => showModelList = true),
+                    OutlinedButton.icon(
+                      icon: const Icon(Icons.swap_horiz, size: 14),
+                      label: Text(
+                        sl.getText('aiSwitchModel') ?? 'Switch Model',
+                        style: const TextStyle(fontSize: 12),
                       ),
+                      onPressed: (isInitializing || isDownloading)
+                          ? null
+                          : () => setDialogState(() => showModelList = true),
                     ),
                   ],
 
-                  // Model list
                   if (!hasModel || showModelList) ...[
                     if (showModelList)
                       Padding(
-                        padding: const EdgeInsets.only(bottom: 8),
+                        padding: const EdgeInsets.symmetric(vertical: 8),
                         child: Text(
                           sl.getText('aiSelectModel') ?? 'Select a model',
                           style: const TextStyle(
@@ -850,7 +938,7 @@ class _AiChatState extends State<AiChat> {
                         ),
                       ),
                     ...AiService.availableModels.map(buildModelListItem),
-                    const SizedBox(height: 12),
+                    const SizedBox(height: 8),
                     // Custom URL (advanced)
                     ExpansionTile(
                       tilePadding: EdgeInsets.zero,
@@ -876,8 +964,7 @@ class _AiChatState extends State<AiChat> {
                           child: ElevatedButton.icon(
                             icon: const Icon(Icons.download, size: 16),
                             label: Text(
-                                sl.getText('aiDownloadModel') ??
-                                    'Download Model',
+                                sl.getText('aiDownloadModel') ?? 'Download Model',
                                 style: const TextStyle(fontSize: 12)),
                             onPressed: (isInitializing || isDownloading)
                                 ? null
@@ -902,32 +989,25 @@ class _AiChatState extends State<AiChat> {
                                       downloadProgress = 0.0;
                                       downloadError = null;
                                     });
-
                                     _conversation?.dispose();
                                     _conversation = null;
-
                                     final stream = hasModel
                                         ? AiService.instance.switchModel(model)
-                                        : AiService.instance
-                                            .downloadModel(model);
-
+                                        : AiService.instance.downloadModel(model);
                                     downloadSub = stream.listen(
-                                      (progress) {
-                                        setDialogState(
-                                            () => downloadProgress = progress);
-                                      },
+                                      (progress) => setDialogState(
+                                          () => downloadProgress = progress),
                                       onDone: () async {
                                         WakelockPlus.disable();
                                         setDialogState(() {
                                           isDownloading = false;
                                           isInitializing = true;
                                         });
-                                        await AiService.instance.initialize(
-                                            backend: selectedBackend);
-                                        final newBytes = await AiService
-                                            .instance.modelFileSize;
-                                        final gb =
-                                            newBytes / (1024 * 1024 * 1024);
+                                        await AiService.instance
+                                            .initialize(backend: selectedBackend);
+                                        final newBytes =
+                                            await AiService.instance.modelFileSize;
+                                        final gb = newBytes / (1024 * 1024 * 1024);
                                         setDialogState(() {
                                           isInitializing = false;
                                           modelSizeText =
@@ -952,14 +1032,12 @@ class _AiChatState extends State<AiChat> {
                           child: TextButton.icon(
                             icon: const Icon(Icons.open_in_new, size: 14),
                             label: Text(
-                              sl.getText('aiBrowseModels') ??
-                                  'Browse available models',
+                              sl.getText('aiBrowseModels') ?? 'Browse available models',
                               style: const TextStyle(fontSize: 11),
                             ),
                             onPressed: () {
                               launchUrl(
-                                Uri.parse(
-                                    'https://huggingface.co/models?library=litert-lm'),
+                                Uri.parse('https://huggingface.co/models?library=litert-lm'),
                                 mode: LaunchMode.externalApplication,
                               );
                             },
@@ -979,8 +1057,7 @@ class _AiChatState extends State<AiChat> {
                         onPressed: (isInitializing || isDownloading)
                             ? null
                             : () async {
-                                final result =
-                                    await FilePicker.pickFiles(
+                                final result = await FilePicker.pickFiles(
                                   type: FileType.any,
                                 );
                                 if (result != null &&
@@ -995,8 +1072,7 @@ class _AiChatState extends State<AiChat> {
                                   final gb = newBytes / (1024 * 1024 * 1024);
                                   setDialogState(() {
                                     isInitializing = false;
-                                    modelSizeText =
-                                        '${gb.toStringAsFixed(2)} GB';
+                                    modelSizeText = '${gb.toStringAsFixed(2)} GB';
                                     showModelList = false;
                                   });
                                 }
@@ -1005,87 +1081,178 @@ class _AiChatState extends State<AiChat> {
                     ),
                   ],
 
-                  // Progress bar
-                  if (isDownloading) ...[
-                    const SizedBox(height: 12),
-                    LinearProgressIndicator(value: downloadProgress),
-                    const SizedBox(height: 8),
-                    Text(
-                      '${(downloadProgress * 100).toStringAsFixed(1)}%',
-                      style: const TextStyle(fontSize: 12),
-                    ),
-                  ],
-
-                  if (downloadError != null) ...[
-                    const SizedBox(height: 4),
-                    Text(
-                      downloadError!,
-                      style: TextStyle(fontSize: 11, color: Colors.red[700]),
-                    ),
-                  ],
-                  const SizedBox(height: 16),
-                  DropdownButtonFormField<String>(
-                    value: selectedBackend,
-                    decoration: InputDecoration(
-                      labelText: sl.getText('aiBackend') ?? 'Backend',
-                    ),
-                    items: const [
-                      DropdownMenuItem(value: 'gpu', child: Text('GPU')),
-                      DropdownMenuItem(value: 'cpu', child: Text('CPU')),
+                  // Backend selector
+                  const SizedBox(height: 8),
+                  Row(
+                    children: [
+                      Text(sl.getText('aiBackend') ?? 'Backend',
+                          style: const TextStyle(fontSize: 13)),
+                      const Spacer(),
+                      SegmentedButton<String>(
+                        segments: const [
+                          ButtonSegment(value: 'gpu', label: Text('GPU')),
+                          ButtonSegment(value: 'cpu', label: Text('CPU')),
+                        ],
+                        selected: {selectedBackend},
+                        onSelectionChanged: (isDownloading || isInitializing)
+                            ? null
+                            : (vals) {
+                                setDialogState(() => selectedBackend = vals.first);
+                              },
+                        style: const ButtonStyle(
+                          visualDensity: VisualDensity.compact,
+                        ),
+                      ),
                     ],
-                    onChanged: (isInitializing || isDownloading)
-                        ? null
-                        : (value) {
-                            if (value != null) {
-                              selectedBackend = value;
-                            }
-                          },
                   ),
-                  const SizedBox(height: 12),
-                  DropdownButtonFormField<String>(
-                    value: selectedLanguage,
-                    decoration: InputDecoration(
-                      labelText: sl.getText('aiOutputLanguage') ?? 'AI Language',
-                    ),
-                    items: const [
-                      DropdownMenuItem(value: 'zh', child: Text('中文')),
-                      DropdownMenuItem(value: 'en', child: Text('English')),
+
+                  // AI Output Language
+                  const SizedBox(height: 8),
+                  Row(
+                    children: [
+                      Text(sl.getText('aiOutputLanguage') ?? 'AI Language',
+                          style: const TextStyle(fontSize: 13)),
+                      const Spacer(),
+                      SegmentedButton<String>(
+                        segments: const [
+                          ButtonSegment(value: 'zh', label: Text('中文')),
+                          ButtonSegment(value: 'en', label: Text('EN')),
+                        ],
+                        selected: {selectedLanguage},
+                        onSelectionChanged: (vals) {
+                          setDialogState(() => selectedLanguage = vals.first);
+                          AiService.instance.setLanguage(vals.first);
+                        },
+                        style: const ButtonStyle(
+                          visualDensity: VisualDensity.compact,
+                        ),
+                      ),
                     ],
-                    onChanged: (value) {
-                      if (value != null) {
-                        selectedLanguage = value;
-                        AiService.instance.setLanguage(value);
-                      }
+                  ),
+
+                  const Divider(height: 24),
+
+                  // ── Section 2: MCP Tools ───────────────────────────────
+                  _buildSettingsSectionHeader(
+                      ctx, sl.getText('mcpTools') ?? 'MCP Tools',
+                      trailing: Switch(
+                        value: mcpEnabled,
+                        onChanged: (v) async {
+                          setDialogState(() => mcpEnabled = v);
+                          await McpService.instance.saveConfig(enabled: v);
+                        },
+                      )),
+                  const SizedBox(height: 8),
+
+                  TextField(
+                    controller: mcpUrlCtl,
+                    style: const TextStyle(fontSize: 13),
+                    decoration: InputDecoration(
+                      labelText: sl.getText('mcpServerUrl') ?? 'Server URL',
+                      isDense: true,
+                      border: const OutlineInputBorder(),
+                    ),
+                    onChanged: (v) => mcpUrl = v,
+                    onEditingComplete: () async {
+                      await McpService.instance.saveConfig(url: mcpUrl);
                     },
                   ),
-                  const SizedBox(height: 16),
-                  if (isInitializing)
-                    const Row(
-                      children: [
-                        SizedBox(
-                          width: 16,
-                          height: 16,
-                          child: CircularProgressIndicator(strokeWidth: 2),
-                        ),
-                        SizedBox(width: 12),
-                        Text('Loading model...'),
-                      ],
+                  const SizedBox(height: 8),
+                  TextField(
+                    controller: mcpTokenCtl,
+                    style: const TextStyle(fontSize: 13),
+                    obscureText: true,
+                    decoration: InputDecoration(
+                      labelText: sl.getText('mcpAuthToken') ?? 'Bearer Token',
+                      isDense: true,
+                      border: const OutlineInputBorder(),
                     ),
-                  if (!isInitializing && !isDownloading) _buildStatusRow(sl),
+                    onChanged: (v) => mcpToken = v,
+                    onEditingComplete: () async {
+                      await McpService.instance.saveConfig(token: mcpToken);
+                    },
+                  ),
+                  const SizedBox(height: 8),
+                  Row(
+                    children: [
+                      Icon(
+                        McpService.instance.isReady
+                            ? Icons.check_circle_outline
+                            : isMcpFetching
+                                ? Icons.sync
+                                : Icons.radio_button_unchecked,
+                        size: 14,
+                        color: McpService.instance.isReady
+                            ? Colors.green
+                            : Theme.of(ctx).colorScheme.onSurfaceVariant,
+                      ),
+                      const SizedBox(width: 6),
+                      Text(
+                        McpService.instance.isReady
+                            ? (sl.getText('mcpReady') ?? 'Ready')
+                            : isMcpFetching
+                                ? (sl.getText('mcpFetching') ?? 'Fetching...')
+                                : (sl.getText('mcpNotConfigured') ?? 'Not configured'),
+                        style: const TextStyle(fontSize: 12),
+                      ),
+                      const Spacer(),
+                      TextButton(
+                        onPressed: isMcpFetching
+                            ? null
+                            : () async {
+                                await McpService.instance.saveConfig(
+                                    url: mcpUrl, token: mcpToken);
+                                setDialogState(() => isMcpFetching = true);
+                                await McpService.instance.fetchContextOnModelReady();
+                                if (ctx.mounted) {
+                                  setDialogState(() => isMcpFetching = false);
+                                }
+                              },
+                        child: Text(
+                          sl.getText('mcpFetchNow') ?? 'Fetch Now',
+                          style: const TextStyle(fontSize: 12),
+                        ),
+                      ),
+                    ],
+                  ),
+
+                  const Divider(height: 24),
+
+                  // ── Section 3: Conversation ────────────────────────────
+                  _buildSettingsSectionHeader(
+                      ctx, sl.getText('aiConversation') ?? 'Conversation'),
+                  const SizedBox(height: 8),
+
+                  SizedBox(
+                    width: double.infinity,
+                    child: OutlinedButton.icon(
+                      icon: const Icon(Icons.delete_sweep_outlined, size: 16),
+                      label: Text(
+                        sl.getText('aiClearChat') ?? 'Clear',
+                        style: const TextStyle(fontSize: 13),
+                      ),
+                      onPressed: () {
+                        mcpUrlCtl.dispose();
+                        mcpTokenCtl.dispose();
+                        Navigator.of(ctx).pop();
+                        _clearChat();
+                      },
+                    ),
+                  ),
                 ],
               ),
             ),
             actions: [
               TextButton(
-                onPressed: (isInitializing || isDownloading)
-                    ? null
-                    : () {
-                        downloadSub?.cancel();
-                        WakelockPlus.disable();
-                        Navigator.of(ctx).pop();
-                        setState(() {});
-                      },
-                child: Text(sl.getText('confirmLabel') ?? 'OK'),
+                onPressed: () {
+                  mcpUrlCtl.dispose();
+                  mcpTokenCtl.dispose();
+                  downloadSub?.cancel();
+                  WakelockPlus.disable();
+                  Navigator.of(ctx).pop();
+                  setState(() {});
+                },
+                child: Text(sl.getText('cancelLabel') ?? 'Close'),
               ),
             ],
           );
