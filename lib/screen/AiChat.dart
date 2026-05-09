@@ -19,6 +19,7 @@ import '../service/AiService.dart';
 import '../service/McpService.dart';
 import '../service/NoteAccessSqlite.dart';
 import '../utils/NavigationHelper.dart';
+import '../utils/MarkdownParser.dart';
 import 'NoteLanding.dart';
 
 class AiChat extends StatefulWidget {
@@ -1595,16 +1596,28 @@ class _AiChatState extends State<AiChat> {
                       if (msg.content.isEmpty && msg.thinkingContent != null && _isStreaming)
                         _TypingDots(color: colorScheme.onSurfaceVariant)
                       else if (msg.content.isNotEmpty && !(isUser && msg.audioPath != null))
-                        SelectableText(
-                          msg.content,
-                          style: TextStyle(
-                            color: isUser
-                                ? colorScheme.onPrimaryContainer
-                                : colorScheme.onSurface,
-                            fontSize: 14,
-                            height: 1.4,
-                          ),
-                        ),
+                        isUser
+                            ? SelectableText(
+                                msg.content,
+                                style: TextStyle(
+                                  color: colorScheme.onPrimaryContainer,
+                                  fontSize: 14,
+                                  height: 1.4,
+                                ),
+                              )
+                            : SelectableText.rich(
+                                TextSpan(
+                                  children: parseMarkdown(
+                                    msg.content,
+                                    TextStyle(
+                                      color: colorScheme.onSurface,
+                                      fontSize: 14,
+                                      height: 1.4,
+                                    ),
+                                    colorScheme,
+                                  ),
+                                ),
+                              ),
                     ],
                     if (msg.content.isNotEmpty) ...[
                       const SizedBox(height: 4),
