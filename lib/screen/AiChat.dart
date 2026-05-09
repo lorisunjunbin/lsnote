@@ -1260,46 +1260,8 @@ class _AiChatState extends State<AiChat> {
       ),
     );
     urlCtl.dispose();
-  }
-
-  Widget _buildStatusRow(SimpleLocalizations sl) {
-    final state = AiService.instance.state;
-    IconData icon;
-    Color color;
-    String text;
-
-    switch (state) {
-      case AiServiceState.ready:
-        icon = Icons.check_circle;
-        color = Colors.green;
-        text = sl.getText('aiModelReady') ?? 'Model ready';
-        break;
-      case AiServiceState.error:
-        icon = Icons.error;
-        color = Colors.red;
-        text = sl.getText('aiModelError') ?? 'Model failed to load';
-        break;
-      case AiServiceState.loading:
-        icon = Icons.hourglass_empty;
-        color = Colors.orange;
-        text = sl.getText('aiModelLoading') ?? 'Loading...';
-        break;
-      case AiServiceState.uninitialized:
-        icon = Icons.info_outline;
-        color = Colors.grey;
-        text = sl.getText('aiModelNotSet') ?? 'Not configured';
-        break;
-    }
-
-    return Row(
-      children: [
-        Icon(icon, color: color, size: 18),
-        const SizedBox(width: 8),
-        Expanded(
-          child: Text(text, style: TextStyle(color: color, fontSize: 12)),
-        ),
-      ],
-    );
+    mcpUrlCtl.dispose();
+    mcpTokenCtl.dispose();
   }
 
   @override
