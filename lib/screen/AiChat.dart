@@ -1499,7 +1499,7 @@ class _AiChatState extends State<AiChat> {
                 side: isUser
                     ? BorderSide.none
                     : BorderSide(
-                        color: colorScheme.primary.withValues(alpha: 0.15),
+                        color: colorScheme.primary.withValues(alpha: 0.3),
                         width: 0.5),
                 borderRadius: BorderRadius.only(
                   topLeft: const Radius.circular(16),
@@ -1658,7 +1658,7 @@ class _AiChatState extends State<AiChat> {
           color: colorScheme.surfaceContainerLow,
           borderRadius: BorderRadius.circular(12),
           border: Border.all(
-            color: colorScheme.outline.withValues(alpha: 0.15),
+            color: colorScheme.outline.withValues(alpha: 0.3),
           ),
         ),
         child: isCall
