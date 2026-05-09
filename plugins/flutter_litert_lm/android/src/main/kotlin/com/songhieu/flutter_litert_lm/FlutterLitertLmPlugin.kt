@@ -177,10 +177,15 @@ class FlutterLitertLmPlugin : FlutterPlugin, MethodCallHandler, EventChannel.Str
                     ?: throw IllegalStateException("Conversation not found: $convId")
 
                 val contents = parseContents(contentsList)
-                val response = if (extraContext != null) {
-                    conversation.sendMessage(contents, extraContext)
+                val isToolResponse = contentsList.any { it["type"] == "toolResponse" }
+                val message = if (isToolResponse) Message.tool(contents) else null
+
+                val response = if (message != null) {
+                    if (extraContext != null) conversation.sendMessage(message, extraContext)
+                    else conversation.sendMessage(message)
                 } else {
-                    conversation.sendMessage(contents)
+                    if (extraContext != null) conversation.sendMessage(contents, extraContext)
+                    else conversation.sendMessage(contents)
                 }
 
                 val responseMap = messageToMap(response)
@@ -285,14 +290,7 @@ class FlutterLitertLmPlugin : FlutterPlugin, MethodCallHandler, EventChannel.Str
         }
 
         val toolProviders = toolsList?.map { toolMap ->
-            val funcMap = HashMap<String, Any?>()
-            funcMap["name"] = toolMap["name"]
-            funcMap["description"] = toolMap["description"]
-            funcMap["parameters"] = toolMap["parameters"]
-            val wrapperMap = HashMap<String, Any?>()
-            wrapperMap["type"] = "function"
-            wrapperMap["function"] = funcMap
-            val toolJson = Gson().toJson(wrapperMap)
+            val toolJson = Gson().toJson(toolMap)
             val openApiTool = object : OpenApiTool {
                 override fun getToolDescriptionJsonString(): String = toolJson
                 override fun execute(args: String): String = ""
