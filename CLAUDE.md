@@ -93,6 +93,19 @@ flutter analyze lib/some_file.dart
 flutter pub outdated
 ```
 
+## Release Workflow
+
+当用户提到"打包发布"/"release"/"新版本"时，执行以下完整流程：
+
+1. **更新版本号** — `pubspec.yaml` 中 `version: X.Y.Z+N`（patch +1，build number +1）
+2. **更新 README.md** — 反映新功能/改动
+3. **Commit** — `git add` 相关文件，commit message 格式：`feat: ... (vX.Y.Z)`
+4. **Tag & Push** — `git tag vX.Y.Z && git push origin master --tags`
+5. **Build release APK** — `flutter build apk --release --target-platform android-arm64`
+6. **打包到 bin/** — `mkdir -p bin/X.Y.Z+N && zip -j bin/X.Y.Z+N/app-release.zip build/app/outputs/flutter-apk/app-release.apk`
+
+注意：`bin/` 目录已 gitignore，APK 通过 GitHub Release 上传。
+
 ## Architecture
 
 The app uses **Provider + ChangeNotifier** for state management and **sqflite** for local persistence.
