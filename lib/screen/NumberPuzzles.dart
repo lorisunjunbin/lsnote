@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:lorisun_note/screen/NoteLanding.dart';
+import '../utils/NavigationHelper.dart';
 import 'package:provider/provider.dart';
 
 import '../model/GuessItem.dart';
@@ -482,7 +483,13 @@ $bText ${sl?.getText('resultCorrectValue') ?? 'numbers correct but in wrong posi
     final colorScheme = theme.colorScheme;
     final guessitemProvider = Provider.of<GuessitemChangeNotifier>(context);
 
-    return Scaffold(
+    return PopScope(
+      canPop: false,
+      onPopInvokedWithResult: NavigationHelper.createPopCallback(
+        context,
+        NoteLanding.routeName,
+      ),
+      child: Scaffold(
       appBar: AppBar(
         leading: IconButton(
           icon: const Icon(Icons.arrow_back),
@@ -629,7 +636,8 @@ $bText ${sl?.getText('resultCorrectValue') ?? 'numbers correct but in wrong posi
               ),
             ),
         ],
-      ));
+      )),
+    );
   }
 
   @override

@@ -1295,23 +1295,6 @@ class _NoteLandingState extends State<NoteLanding>
                       ),
                       if (isExpanded) ...[
                         const SizedBox(height: 6),
-                        Row(
-                          children: [
-                            _formatButton(Icons.today, sl.getText('insertDate') ?? 'Date', () {
-                              final ctrl = _ctrls['${item.id}cblt']!;
-                              final date = DateTime.now().toString().substring(0, 10);
-                              _insertAtCursor(ctrl, date);
-                            }, colorScheme),
-                            _formatButton(Icons.checklist, sl.getText('insertChecklist') ?? 'Task', () {
-                              final ctrl = _ctrls['${item.id}cblt']!;
-                              _insertAtCursor(ctrl, '- [ ] ');
-                            }, colorScheme),
-                            _formatButton(Icons.horizontal_rule, sl.getText('insertDivider') ?? 'Line', () {
-                              final ctrl = _ctrls['${item.id}cblt']!;
-                              _insertAtCursor(ctrl, '\n---\n');
-                            }, colorScheme),
-                          ],
-                        ),
                         TextField(
                           key: Key('${item.id}tf'),
                           controller: _ctrls['${item.id}cblt'],
@@ -1350,102 +1333,105 @@ class _NoteLandingState extends State<NoteLanding>
                           textCapitalization: TextCapitalization.sentences,
                         ),
                         Padding(
-                          padding: const EdgeInsets.only(left: 8, top: 2, bottom: 2),
+                          padding: const EdgeInsets.only(left: 8, top: 0, bottom: 0),
                           child: Builder(builder: (_) {
                             final text = _ctrls['${item.id}cblt']?.text ?? '';
                             final chars = text.length;
                             final lines = text.isEmpty ? 0 : text.split('\n').length;
-                            return Text(
-                              '$chars chars · $lines lines',
-                              style: TextStyle(
-                                fontSize: 11,
-                                color: colorScheme.onSurfaceVariant.withValues(alpha: 0.6),
-                              ),
+                            return Row(
+                              children: [
+                                Container(
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 6,
+                                    vertical: 2,
+                                  ),
+                                  decoration: BoxDecoration(
+                                    color: colorScheme.primaryContainer.withValues(alpha: 0.4),
+                                    borderRadius: BorderRadius.zero,
+                                  ),
+                                  child: Row(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      Icon(
+                                        Icons.calendar_today_outlined,
+                                        size: 10,
+                                        color: colorScheme.onSurfaceVariant,
+                                      ),
+                                      const SizedBox(width: 3),
+                                      Text(
+                                        '${item.targetDate.toString().substring(0, 10)}',
+                                        style: TextStyle(
+                                          color: colorScheme.primary.withValues(alpha: 0.8),
+                                          fontSize: 10,
+                                          fontWeight: FontWeight.w500,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                                const SizedBox(width: 8),
+                                Text(
+                                  '$chars chars · $lines lines',
+                                  style: TextStyle(
+                                    fontSize: 10,
+                                    color: colorScheme.onSurfaceVariant.withValues(alpha: 0.6),
+                                  ),
+                                ),
+                              ],
                             );
                           }),
                         ),
-                        Row(
+                        Wrap(
+                          spacing: 4,
+                          runSpacing: 0,
+                          crossAxisAlignment: WrapCrossAlignment.center,
                           children: [
-                            Container(
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 8,
-                                vertical: 3,
-                              ),
-                              decoration: BoxDecoration(
-                                color: colorScheme.primaryContainer.withValues(alpha: 0.4),
-                                borderRadius: BorderRadius.zero,
-                              ),
-                              child: Row(
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  Icon(
-                                    Icons.calendar_today_outlined,
-                                    size: 11,
-                                    color: colorScheme.onSurfaceVariant,
-                                  ),
-                                  const SizedBox(width: 4),
-                                  Text(
-                                    '${item.targetDate.toString().substring(0, 10)}',
-                                    style: TextStyle(
-                                      color: colorScheme.primary.withValues(alpha: 0.8),
-                                      fontSize: 11,
-                                      fontWeight: FontWeight.w500,
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ),
-                            const Spacer(),
                             IconButton(
-                              icon: Icon(Icons.copy_outlined, size: 20),
+                              icon: Icon(Icons.copy_outlined, size: 18),
                               color: colorScheme.onSurfaceVariant,
                               tooltip: sl.getText('copyTooltip') ?? 'Copy',
                               padding: EdgeInsets.zero,
-                              constraints: BoxConstraints(minWidth: 32, minHeight: 28),
+                              constraints: BoxConstraints(minWidth: 28, minHeight: 24),
                               onPressed: () => _handleCardCopy(item, sl),
                             ),
-                            const SizedBox(width: 8),
                             IconButton(
-                              icon: Icon(Icons.save_outlined, size: 20),
+                              icon: Icon(Icons.save_outlined, size: 18),
                               color: colorScheme.primary,
                               tooltip: sl.getText('saveTooltip') ?? 'Save',
                               padding: EdgeInsets.zero,
-                              constraints: BoxConstraints(minWidth: 32, minHeight: 28),
+                              constraints: BoxConstraints(minWidth: 28, minHeight: 24),
                               onPressed: () => _handleCardSave(item, sl),
                             ),
-                            const SizedBox(width: 8),
                             IconButton(
-                              icon: Icon(Icons.delete_outline, size: 20),
+                              icon: Icon(Icons.delete_outline, size: 18),
                               color: item.isDone
                                   ? colorScheme.error
                                   : colorScheme.onSurfaceVariant,
                               tooltip: sl.getText('confirm2delete') ?? 'Delete',
                               padding: EdgeInsets.zero,
-                              constraints: BoxConstraints(minWidth: 32, minHeight: 28),
+                              constraints: BoxConstraints(minWidth: 28, minHeight: 24),
                               onPressed: () => _handleCardDelete(item, sl),
                             ),
-                            const SizedBox(width: 8),
                             IconButton(
-                              icon: Icon(Icons.auto_awesome, size: 20),
+                              icon: Icon(Icons.auto_awesome, size: 18),
                               color: colorScheme.primary,
                               tooltip: sl.getText('aiAssist') ?? 'AI Assist',
                               padding: EdgeInsets.zero,
-                              constraints: BoxConstraints(minWidth: 32, minHeight: 28),
+                              constraints: BoxConstraints(minWidth: 28, minHeight: 24),
                               onPressed: () => _showAiAssistSheet(item, sl, colorScheme),
                             ),
                             if (AiService.instance.isReady) ...[
-                              const SizedBox(width: 4),
                               IconButton(
                                 icon: (_isOrganizing[item.id] == true)
                                     ? const SizedBox(
-                                        width: 16,
-                                        height: 16,
+                                        width: 14,
+                                        height: 14,
                                         child: CircularProgressIndicator(strokeWidth: 2))
-                                    : Icon(Icons.auto_fix_high, size: 20),
+                                    : Icon(Icons.auto_fix_high, size: 18),
                                 color: colorScheme.tertiary,
                                 tooltip: sl.getText('aiOrganize') ?? 'AI Organize',
                                 padding: EdgeInsets.zero,
-                                constraints: BoxConstraints(minWidth: 32, minHeight: 28),
+                                constraints: BoxConstraints(minWidth: 28, minHeight: 24),
                                 onPressed: (_isOrganizing[item.id] == true)
                                     ? null
                                     : () => _organizeNoteContent(item),
@@ -1453,25 +1439,24 @@ class _NoteLandingState extends State<NoteLanding>
                             ],
                             if ((_undoStacks[item.id]?.isNotEmpty ?? false) ||
                                 (_redoStacks[item.id]?.isNotEmpty ?? false)) ...[
-                              const SizedBox(width: 4),
                               IconButton(
-                                icon: Icon(Icons.undo, size: 18),
+                                icon: Icon(Icons.undo, size: 16),
                                 color: (_undoStacks[item.id]?.isNotEmpty ?? false)
                                     ? colorScheme.onSurfaceVariant
                                     : colorScheme.outlineVariant,
                                 padding: EdgeInsets.zero,
-                                constraints: BoxConstraints(minWidth: 28, minHeight: 28),
+                                constraints: BoxConstraints(minWidth: 28, minHeight: 24),
                                 onPressed: (_undoStacks[item.id]?.isNotEmpty ?? false)
                                     ? () => _undo(item.id!)
                                     : null,
                               ),
                               IconButton(
-                                icon: Icon(Icons.redo, size: 18),
+                                icon: Icon(Icons.redo, size: 16),
                                 color: (_redoStacks[item.id]?.isNotEmpty ?? false)
                                     ? colorScheme.onSurfaceVariant
                                     : colorScheme.outlineVariant,
                                 padding: EdgeInsets.zero,
-                                constraints: BoxConstraints(minWidth: 28, minHeight: 28),
+                                constraints: BoxConstraints(minWidth: 28, minHeight: 24),
                                 onPressed: (_redoStacks[item.id]?.isNotEmpty ?? false)
                                     ? () => _redo(item.id!)
                                     : null,

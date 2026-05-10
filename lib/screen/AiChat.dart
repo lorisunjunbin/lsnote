@@ -147,9 +147,6 @@ class _AiChatState extends State<AiChat> {
     });
     _scrollToBottom();
 
-    final assistantMsg = ChatMessage(role: 'assistant', content: '');
-    setState(() => _messages.add(assistantMsg));
-
     try {
       final response = await AiService.instance.completeAudio(
         AiPrompts.chatAudio(),
@@ -158,16 +155,11 @@ class _AiChatState extends State<AiChat> {
       );
 
       String transcription = '';
-      String aiResponse = response;
       if (response.contains('[Transcription]:')) {
         final parts = response.split('\n\n');
-        if (parts.length >= 2) {
-          transcription = parts[0].replaceFirst('[Transcription]:', '').trim();
-          aiResponse = parts.sublist(1).join('\n\n').trim();
-        } else {
-          transcription = response.replaceFirst('[Transcription]:', '').trim();
-          aiResponse = '';
-        }
+        transcription = parts[0].replaceFirst('[Transcription]:', '').trim();
+      } else {
+        transcription = response.trim();
       }
 
       if (transcription.isNotEmpty && mounted) {
@@ -181,24 +173,65 @@ class _AiChatState extends State<AiChat> {
         });
       }
 
-      setState(() {
-        _messages[_messages.length - 1] = ChatMessage(
-          role: 'assistant',
-          content: aiResponse.isNotEmpty ? aiResponse : response,
-          timestamp: assistantMsg.timestamp,
-        );
-      });
+      setState(() => _isStreaming = false);
+
+      if (transcription.isNotEmpty) {
+        _sendTranscribedText(transcription);
+      }
     } catch (e) {
+      final assistantMsg = ChatMessage(role: 'assistant', content: '');
+      setState(() => _messages.add(assistantMsg));
       setState(() {
         _messages[_messages.length - 1] = ChatMessage(
           role: 'assistant',
           content: 'Error: $e',
           timestamp: assistantMsg.timestamp,
         );
+        _isStreaming = false;
       });
-    } finally {
-      setState(() => _isStreaming = false);
     }
+    _scrollToBottom();
+  }
+
+  Future<void> _sendTranscribedText(String text) async {
+    if (_isStreaming) return;
+    if (!AiService.instance.isReady) return;
+
+    try {
+      final mcpTools = McpService.instance.tools;
+      if (_conversation != null && !_conversationHasTools && mcpTools.isNotEmpty) {
+        _conversation?.dispose();
+        _conversation = null;
+        _conversationHasTools = false;
+      }
+      if (_conversation == null) {
+        final mcpContext = McpService.instance.contextCache;
+        final baseInstruction = _attachedNote != null
+            ? '${AiService.instance.contextInfo} The user has shared a note for context:\nTitle: ${_attachedNote!.title}\nContent: ${_attachedNote!.content}\n\nHelp the user with questions about this note.'
+            : '${AiService.instance.contextInfo} You are a helpful assistant.';
+        final toolInstruction = mcpTools.isNotEmpty
+            ? '\n\nWhen using tools: extract parameters directly from the user\'s message. Use default values or empty string for unmentioned optional parameters. Do NOT ask the user to confirm parameters — call the tool immediately. If a tool call fails, adjust the parameters based on the error and retry once. Only ask the user for clarification if the retry also fails.'
+            : '';
+        final contextPart = mcpContext.isNotEmpty
+            ? '\n\nContext information:\n$mcpContext'
+            : '';
+        final systemInstruction = '$baseInstruction$toolInstruction$contextPart';
+        _conversation = await AiService.instance.createChatConversation(
+          systemInstruction: systemInstruction,
+          tools: mcpTools,
+        );
+        _conversationHasTools = mcpTools.isNotEmpty;
+      }
+    } catch (e) {
+      return;
+    }
+
+    setState(() => _isStreaming = true);
+    final assistantMsg = ChatMessage(role: 'assistant', content: '');
+    setState(() => _messages.add(assistantMsg));
+    _scrollToBottom();
+
+    await _sendTextWithToolSupport(text, assistantMsg);
     _scrollToBottom();
   }
 
@@ -1318,7 +1351,7 @@ class _AiChatState extends State<AiChat> {
                   Navigator.of(ctx).pop();
                   setState(() {});
                 },
-                child: Text(sl.getText('cancelLabel') ?? 'Close'),
+                child: Text(sl.getText('closeLabel') ?? 'Close'),
               ),
             ],
           );
@@ -1760,7 +1793,7 @@ class _AiChatState extends State<AiChat> {
                                 msg.content,
                                 style: TextStyle(
                                   color: colorScheme.onPrimaryContainer,
-                                  fontSize: 13,
+                                  fontSize: 12,
                                   height: 1.45,
                                 ),
                               )
@@ -1770,7 +1803,7 @@ class _AiChatState extends State<AiChat> {
                                     msg.content,
                                     TextStyle(
                                       color: colorScheme.onSurface,
-                                      fontSize: 13,
+                                      fontSize: 12,
                                       height: 1.45,
                                     ),
                                     colorScheme,
@@ -1808,6 +1841,7 @@ class _AiChatState extends State<AiChat> {
     final lines = msg.content.split('\n');
     final toolName = lines.first;
     final resultText = lines.length > 1 ? lines.sublist(1).join('\n') : '';
+    final mutedColor = colorScheme.onSurfaceVariant.withValues(alpha: 0.55);
 
     return Padding(
       padding: const EdgeInsets.only(left: 8, right: 48, top: 4, bottom: 4),
@@ -1817,7 +1851,7 @@ class _AiChatState extends State<AiChat> {
           color: colorScheme.surfaceContainerLow,
           borderRadius: BorderRadius.circular(12),
           border: Border.all(
-            color: colorScheme.outline.withValues(alpha: 0.3),
+            color: colorScheme.outline.withValues(alpha: 0.2),
           ),
         ),
         child: isCall
@@ -1829,18 +1863,17 @@ class _AiChatState extends State<AiChat> {
                     height: 12,
                     child: CircularProgressIndicator(
                       strokeWidth: 1.5,
-                      color: colorScheme.primary,
+                      color: mutedColor,
                     ),
                   ),
                   const SizedBox(width: 8),
-                  Icon(Icons.build_outlined,
-                      size: 12, color: colorScheme.onSurfaceVariant),
+                  Icon(Icons.build_outlined, size: 12, color: mutedColor),
                   const SizedBox(width: 4),
                   Text(
                     '$toolName...',
                     style: TextStyle(
                       fontSize: 11,
-                      color: colorScheme.onSurfaceVariant,
+                      color: mutedColor,
                     ),
                   ),
                 ],
@@ -1863,15 +1896,15 @@ class _AiChatState extends State<AiChat> {
                     child: Row(
                       children: [
                         Icon(Icons.build_outlined,
-                            size: 13, color: colorScheme.primary),
+                            size: 13, color: mutedColor),
                         const SizedBox(width: 6),
                         Expanded(
                           child: Text(
                             toolName,
                             style: TextStyle(
                               fontSize: 11,
-                              fontWeight: FontWeight.w600,
-                              color: colorScheme.onSurfaceVariant,
+                              fontWeight: FontWeight.w500,
+                              color: mutedColor,
                             ),
                           ),
                         ),
@@ -1881,7 +1914,7 @@ class _AiChatState extends State<AiChat> {
                                 ? Icons.expand_less
                                 : Icons.expand_more,
                             size: 14,
-                            color: colorScheme.onSurfaceVariant,
+                            color: mutedColor,
                           ),
                       ],
                     ),
@@ -1892,8 +1925,7 @@ class _AiChatState extends State<AiChat> {
                       resultText,
                       style: TextStyle(
                         fontSize: 11,
-                        color: colorScheme.onSurfaceVariant
-                            .withValues(alpha: 0.8),
+                        color: mutedColor,
                       ),
                     ),
                   ],
@@ -1904,13 +1936,14 @@ class _AiChatState extends State<AiChat> {
   }
 
   Widget _buildThinkingSection(String thinking, ColorScheme colorScheme) {
+    final mutedColor = colorScheme.onSurfaceVariant.withValues(alpha: 0.5);
     return Container(
       padding: const EdgeInsets.all(8),
       decoration: BoxDecoration(
-        color: colorScheme.surfaceContainerHighest.withValues(alpha: 0.5),
+        color: colorScheme.surfaceContainerHighest.withValues(alpha: 0.3),
         borderRadius: BorderRadius.circular(8),
         border: Border.all(
-          color: colorScheme.outlineVariant.withValues(alpha: 0.5),
+          color: colorScheme.outlineVariant.withValues(alpha: 0.3),
           width: 0.5,
         ),
       ),
@@ -1921,13 +1954,12 @@ class _AiChatState extends State<AiChat> {
           childrenPadding: const EdgeInsets.only(top: 4),
           dense: true,
           initiallyExpanded: false,
-          leading: Icon(Icons.psychology,
-              size: 14, color: colorScheme.onSurfaceVariant),
+          leading: Icon(Icons.psychology, size: 14, color: mutedColor),
           title: Text(
             'Thinking...',
             style: TextStyle(
               fontSize: 11,
-              color: colorScheme.onSurfaceVariant,
+              color: mutedColor,
               fontStyle: FontStyle.italic,
             ),
           ),
@@ -1935,8 +1967,8 @@ class _AiChatState extends State<AiChat> {
             SelectableText(
               thinking,
               style: TextStyle(
-                fontSize: 12,
-                color: colorScheme.onSurfaceVariant,
+                fontSize: 11,
+                color: mutedColor,
                 height: 1.3,
               ),
             ),

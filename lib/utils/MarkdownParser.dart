@@ -40,7 +40,7 @@ List<InlineSpan> parseMarkdown(
       spans.add(TextSpan(
         text: content,
         style: baseStyle.copyWith(
-          fontSize: (baseStyle.fontSize ?? 13) + bump,
+          fontSize: (baseStyle.fontSize ?? 12) + bump,
           fontWeight: FontWeight.w700,
           height: 1.6,
         ),
@@ -111,7 +111,7 @@ List<InlineSpan> _parseInline(
             match.group(4)!,
             style: baseStyle.copyWith(
               fontFamily: 'monospace',
-              fontSize: (baseStyle.fontSize ?? 13) - 1,
+              fontSize: (baseStyle.fontSize ?? 12) - 1,
             ),
           ),
         ),
