@@ -32,6 +32,23 @@ List<InlineSpan> parseMarkdown(
       continue;
     }
 
+    final headingMatch = RegExp(r'^(#{1,3})\s+(.+)$').firstMatch(line);
+    if (headingMatch != null) {
+      final level = headingMatch.group(1)!.length;
+      final content = headingMatch.group(2)!;
+      final bump = 4 - level; // # → +3, ## → +2, ### → +1
+      spans.add(TextSpan(
+        text: content,
+        style: baseStyle.copyWith(
+          fontSize: (baseStyle.fontSize ?? 13) + bump,
+          fontWeight: FontWeight.w700,
+          height: 1.6,
+        ),
+      ));
+      if (i < lines.length - 1) spans.add(const TextSpan(text: '\n'));
+      continue;
+    }
+
     final unorderedMatch = RegExp(r'^(\s*)[-*]\s+(.*)$').firstMatch(line);
     final orderedMatch = RegExp(r'^(\s*)(\d+)\.\s+(.*)$').firstMatch(line);
 
@@ -82,12 +99,21 @@ List<InlineSpan> _parseInline(
         style: baseStyle.copyWith(fontStyle: FontStyle.italic),
       ));
     } else if (match.group(4) != null) {
-      spans.add(TextSpan(
-        text: match.group(4),
-        style: baseStyle.copyWith(
-          fontFamily: 'monospace',
-          fontSize: (baseStyle.fontSize ?? 14) - 1,
-          backgroundColor: colorScheme.surfaceContainerHighest,
+      spans.add(WidgetSpan(
+        alignment: PlaceholderAlignment.middle,
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 3, vertical: 1),
+          decoration: BoxDecoration(
+            color: colorScheme.surfaceContainerHighest,
+            borderRadius: BorderRadius.circular(3),
+          ),
+          child: Text(
+            match.group(4)!,
+            style: baseStyle.copyWith(
+              fontFamily: 'monospace',
+              fontSize: (baseStyle.fontSize ?? 13) - 1,
+            ),
+          ),
         ),
       ));
     }
@@ -110,8 +136,8 @@ WidgetSpan _buildCodeBlockSpan(String code, ColorScheme colorScheme) {
   return WidgetSpan(
     child: Container(
       width: double.infinity,
-      margin: const EdgeInsets.symmetric(vertical: 4),
-      padding: const EdgeInsets.all(10),
+      margin: const EdgeInsets.symmetric(vertical: 6),
+      padding: const EdgeInsets.fromLTRB(10, 8, 10, 8),
       decoration: BoxDecoration(
         color: colorScheme.surfaceContainerHighest,
         borderRadius: BorderRadius.circular(8),
@@ -120,7 +146,7 @@ WidgetSpan _buildCodeBlockSpan(String code, ColorScheme colorScheme) {
         code,
         style: TextStyle(
           fontFamily: 'monospace',
-          fontSize: 12,
+          fontSize: 11.5,
           color: colorScheme.onSurface,
           height: 1.4,
         ),
@@ -134,7 +160,7 @@ WidgetSpan _buildListItemSpan(String bullet, String content,
   final inlineSpans = _parseInline(content, baseStyle, colorScheme);
   return WidgetSpan(
     child: Padding(
-      padding: const EdgeInsets.only(left: 12),
+      padding: const EdgeInsets.only(left: 8),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [

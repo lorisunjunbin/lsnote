@@ -7,20 +7,23 @@ S22Ultra and S24U and S26U
 - import/export data manually(backup before remove the app), standard json format
 - fingerprint authentication for app lock, if device support it
 
-## On-Device AI (v1.4.0)
+## On-Device AI (v1.4.1)
 
 Powered by **Gemma 4 E4B-it** via LiteRT-LM, all AI features run locally on-device — no network required.
 
 ### AI Chat
 - Multi-turn conversation with streaming responses
 - Polished chat UI with refined bubble styling and typing indicators
+- Markdown rendering (headings, code blocks, inline code, lists)
 - Attach a note as context for Q&A
 - Send images for AI analysis (vision)
 - Send voice messages for AI transcription (audio)
 - **MCP Tool Calling** — connect to external MCP servers for real-time context (weather, calendar, earthquake info, etc.)
 
 ### MCP Integration
-- Configure MCP server URL and Bearer token in AI Settings
+- **Multi-server support** — configure multiple MCP servers with individual enable/disable toggles
+- Each server has name, URL, fallback URL (auto-retry on primary failure), and Bearer token
+- Tool-call bubbles display `[ServerName] toolName` for easy identification
 - Auto-fetches context tools (weather/holiday/time) on model load
 - Model can invoke external tools during conversation and display results inline
 - Tool-calling loop with up to 5 rounds of tool use per message

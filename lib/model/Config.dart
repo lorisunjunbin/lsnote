@@ -8,6 +8,7 @@ class Config {
   static final String mcpEnabled = "mcpEnabled";
   static final String mcpServerUrl = "mcpServerUrl";
   static final String mcpAuthHeader = "mcpAuthHeader";
+  static final String mcpServers = "mcpServers";
 
   final int? id;
   final String? name;

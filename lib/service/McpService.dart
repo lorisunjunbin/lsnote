@@ -5,6 +5,7 @@ import 'dart:io';
 import 'package:flutter_litert_lm/flutter_litert_lm.dart';
 
 import '../model/Config.dart';
+import '../model/McpServer.dart';
 import '../model/McpTool.dart';
 import 'NoteAccessSqlite.dart';
 
@@ -12,20 +13,17 @@ class McpService {
   static final McpService instance = McpService._();
   McpService._();
 
-  String _serverUrl = '';
-  String _authHeader = '';
-  bool _enabled = false;
+  List<McpServer> _servers = [];
   bool _isReady = false;
   String _contextCache = '';
   List<McpTool> _mcpTools = [];
+  Map<String, McpServer> _toolServerMap = {};
   int _requestId = 0;
 
-  bool get isEnabled => _enabled && _serverUrl.isNotEmpty;
+  bool get isEnabled => _servers.any((s) => s.enabled && s.url.isNotEmpty);
   bool get isReady => _isReady;
   String get contextCache => _contextCache;
-  String get serverUrl => _serverUrl;
-  String get authHeader => _authHeader;
-  bool get enabled => _enabled;
+  List<McpServer> get servers => _servers;
 
   List<LiteLmTool> get tools {
     if (!isEnabled) return [];
@@ -38,27 +36,70 @@ class McpService {
 
   Future<void> init() async {
     try {
+      final cfg = await db.getConfig(Config.mcpServers);
+      if (cfg.value != null && cfg.value!.isNotEmpty) {
+        final list = jsonDecode(cfg.value!) as List<dynamic>;
+        _servers = list
+            .whereType<Map<String, dynamic>>()
+            .map((j) => McpServer.fromJson(j))
+            .toList();
+      } else {
+        await _migrateOldConfig();
+      }
+    } catch (_) {
+      await _migrateOldConfig();
+    }
+  }
+
+  Future<void> _migrateOldConfig() async {
+    try {
       final enabledCfg = await db.getConfig(Config.mcpEnabled);
       final urlCfg = await db.getConfig(Config.mcpServerUrl);
       final authCfg = await db.getConfig(Config.mcpAuthHeader);
-      _enabled = enabledCfg.value == '1';
-      _serverUrl = urlCfg.value ?? '';
-      _authHeader = authCfg.value ?? '';
+      final url = urlCfg.value ?? '';
+      if (url.isNotEmpty) {
+        _servers = [
+          McpServer(
+            name: 'Default',
+            url: url,
+            token: authCfg.value ?? '',
+            enabled: enabledCfg.value == '1',
+          ),
+        ];
+        await saveServers();
+      }
     } catch (_) {}
   }
 
-  Future<void> saveConfig({String? url, String? token, bool? enabled}) async {
-    if (url != null) {
-      _serverUrl = url;
-      db.setConfig(Config.mcpServerUrl, url);
+  Future<void> saveServers() async {
+    final json = jsonEncode(_servers.map((s) => s.toJson()).toList());
+    await db.ensureConfig(Config.mcpServers, '[]');
+    db.setConfig(Config.mcpServers, json);
+  }
+
+  Future<void> addServer(McpServer server) async {
+    _servers.add(server);
+    await saveServers();
+  }
+
+  Future<void> removeServer(int index) async {
+    if (index >= 0 && index < _servers.length) {
+      _servers.removeAt(index);
+      await saveServers();
     }
-    if (token != null) {
-      _authHeader = token;
-      db.setConfig(Config.mcpAuthHeader, token);
+  }
+
+  Future<void> updateServer(int index, McpServer server) async {
+    if (index >= 0 && index < _servers.length) {
+      _servers[index] = server;
+      await saveServers();
     }
-    if (enabled != null) {
-      _enabled = enabled;
-      db.setConfig(Config.mcpEnabled, enabled ? '1' : '0');
+  }
+
+  Future<void> toggleServer(int index, bool enabled) async {
+    if (index >= 0 && index < _servers.length) {
+      _servers[index].enabled = enabled;
+      await saveServers();
     }
   }
 
@@ -77,36 +118,45 @@ class McpService {
     _isReady = false;
     _contextCache = '';
     _mcpTools = [];
+    _toolServerMap = {};
 
-    try {
-      final toolsBody = jsonEncode({
-        'jsonrpc': '2.0',
-        'id': ++_requestId,
-        'method': 'tools/list',
-        'params': {},
-      });
-      final toolsJson = await _post(_serverUrl, toolsBody);
-      final toolsResult = toolsJson['result'] as Map<String, dynamic>? ?? toolsJson;
-      final toolsList = toolsResult['tools'] as List<dynamic>? ?? [];
-      _mcpTools = toolsList
-          .whereType<Map<String, dynamic>>()
-          .map((j) => McpTool.fromJson(j))
-          .toList();
+    final enabledServers = _servers.where((s) => s.enabled && s.url.isNotEmpty);
 
-      final contextBuffer = StringBuffer();
-      for (final tool in _mcpTools) {
-        if (!_isContextTool(tool.name)) continue;
-        try {
-          final args = _buildDefaultArgs(tool);
-          final result = await callTool(tool.name, args);
-          if (result.isNotEmpty) {
-            contextBuffer.writeln('${tool.name}: $result');
-          }
-        } catch (_) {}
-      }
-      _contextCache = contextBuffer.toString().trim();
-      _isReady = true;
-    } catch (_) {}
+    for (final server in enabledServers) {
+      try {
+        final toolsBody = jsonEncode({
+          'jsonrpc': '2.0',
+          'id': ++_requestId,
+          'method': 'tools/list',
+          'params': {},
+        });
+        final toolsJson = await _postWithFallback(server, toolsBody);
+        final toolsResult = toolsJson['result'] as Map<String, dynamic>? ?? toolsJson;
+        final toolsList = toolsResult['tools'] as List<dynamic>? ?? [];
+        final serverTools = toolsList
+            .whereType<Map<String, dynamic>>()
+            .map((j) => McpTool.fromJson(j))
+            .toList();
+        _mcpTools.addAll(serverTools);
+        for (final tool in serverTools) {
+          _toolServerMap[tool.name] = server;
+        }
+      } catch (_) {}
+    }
+
+    final contextBuffer = StringBuffer();
+    for (final tool in _mcpTools) {
+      if (!_isContextTool(tool.name)) continue;
+      try {
+        final args = _buildDefaultArgs(tool);
+        final result = await callTool(tool.name, args);
+        if (result.isNotEmpty) {
+          contextBuffer.writeln('${tool.name}: $result');
+        }
+      } catch (_) {}
+    }
+    _contextCache = contextBuffer.toString().trim();
+    _isReady = _mcpTools.isNotEmpty;
   }
 
   Map<String, dynamic> _buildDefaultArgs(McpTool tool) {
@@ -124,14 +174,18 @@ class McpService {
     return args;
   }
 
+  String? getServerNameForTool(String toolName) => _toolServerMap[toolName]?.name;
+
   Future<String> callTool(String name, Map<String, dynamic> args) async {
+    final server = _toolServerMap[name];
+    if (server == null) throw Exception('No server found for tool: $name');
     final body = jsonEncode({
       'jsonrpc': '2.0',
       'id': ++_requestId,
       'method': 'tools/call',
       'params': {'name': name, 'arguments': args},
     });
-    final result = await _post(_serverUrl, body);
+    final result = await _postWithFallback(server, body);
     final content = result['result']?['content'] as List<dynamic>? ?? [];
     return content
         .whereType<Map<String, dynamic>>()
@@ -140,13 +194,25 @@ class McpService {
         .join('\n');
   }
 
-  Future<Map<String, dynamic>> _post(String url, String body) async {
+  Future<Map<String, dynamic>> _postWithFallback(
+      McpServer server, String body) async {
+    try {
+      return await _post(server.url, server.token, body);
+    } catch (e) {
+      if (server.fallbackUrl.isNotEmpty) {
+        return await _post(server.fallbackUrl, server.token, body);
+      }
+      rethrow;
+    }
+  }
+
+  Future<Map<String, dynamic>> _post(String url, String token, String body) async {
     final client = HttpClient();
     try {
       final request = await client.postUrl(Uri.parse(url));
       request.headers.set('Content-Type', 'application/json; charset=utf-8');
-      if (_authHeader.isNotEmpty) {
-        request.headers.set('Authorization', 'Bearer $_authHeader');
+      if (token.isNotEmpty) {
+        request.headers.set('Authorization', 'Bearer $token');
       }
       final bodyBytes = utf8.encode(body);
       request.headers.set('Content-Length', bodyBytes.length.toString());

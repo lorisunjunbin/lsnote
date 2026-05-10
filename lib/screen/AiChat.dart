@@ -16,6 +16,7 @@ import '../model/ChatMessage.dart';
 import '../model/Note.dart';
 import '../service/AiPrompts.dart';
 import '../service/AiService.dart';
+import '../model/McpServer.dart';
 import '../service/McpService.dart';
 import '../service/NoteAccessSqlite.dart';
 import '../utils/NavigationHelper.dart';
@@ -221,9 +222,13 @@ class _AiChatState extends State<AiChat> {
         final baseInstruction = _attachedNote != null
             ? '${AiService.instance.contextInfo} The user has shared a note for context:\nTitle: ${_attachedNote!.title}\nContent: ${_attachedNote!.content}\n\nHelp the user with questions about this note.'
             : '${AiService.instance.contextInfo} You are a helpful assistant.';
-        final systemInstruction = mcpContext.isNotEmpty
-            ? '$baseInstruction\n\nContext information:\n$mcpContext'
-            : baseInstruction;
+        final toolInstruction = mcpTools.isNotEmpty
+            ? '\n\nWhen using tools: extract parameters directly from the user\'s message. Use default values or empty string for unmentioned optional parameters. Do NOT ask the user to confirm parameters — call the tool immediately. If a tool call fails, adjust the parameters based on the error and retry once. Only ask the user for clarification if the retry also fails.'
+            : '';
+        final contextPart = mcpContext.isNotEmpty
+            ? '\n\nContext information:\n$mcpContext'
+            : '';
+        final systemInstruction = '$baseInstruction$toolInstruction$contextPart';
         _conversation = await AiService.instance.createChatConversation(
           systemInstruction: systemInstruction,
           tools: mcpTools,
@@ -387,12 +392,14 @@ class _AiChatState extends State<AiChat> {
       for (final toolCall in response.toolCalls) {
         final toolName = toolCall.name;
         final toolArgs = toolCall.arguments;
+        final serverName = McpService.instance.getServerNameForTool(toolName);
+        final toolLabel = serverName != null ? '[$serverName] $toolName' : toolName;
 
         if (mounted) {
           setState(() {
             _messages[_messages.length - 1] = ChatMessage(
               role: 'assistant',
-              content: toolName,
+              content: toolLabel,
               timestamp: assistantMsg.timestamp,
               messageType: MessageType.toolCall,
             );
@@ -413,7 +420,7 @@ class _AiChatState extends State<AiChat> {
             final idx = _messages.length - 2;
             _messages[idx] = ChatMessage(
               role: 'assistant',
-              content: '$toolName\n$toolResult',
+              content: '$toolLabel\n$toolResult',
               timestamp: assistantMsg.timestamp,
               messageType: MessageType.toolResult,
             );
@@ -519,7 +526,7 @@ class _AiChatState extends State<AiChat> {
     showDialog<Note>(
       context: context,
       builder: (ctx) => AlertDialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
         title: Text(sl.getText('aiSelectNote') ?? 'Select a note'),
         content: SizedBox(
           width: double.maxFinite,
@@ -579,12 +586,8 @@ class _AiChatState extends State<AiChat> {
     bool dialogActive = true;
     bool showModelList = false;
 
-    String mcpUrl = McpService.instance.serverUrl;
-    String mcpToken = McpService.instance.authHeader;
-    bool mcpEnabled = McpService.instance.enabled;
+    List<McpServer> mcpServers = List<McpServer>.from(McpService.instance.servers);
     bool isMcpFetching = false;
-    final mcpUrlCtl = TextEditingController(text: mcpUrl);
-    final mcpTokenCtl = TextEditingController(text: mcpToken);
 
     final recommendedModel = await AiService.getRecommendedModel();
     final deviceRamGB = await AiService.getDeviceRamGB();
@@ -832,7 +835,7 @@ class _AiChatState extends State<AiChat> {
 
           return AlertDialog(
             shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(20)),
+                borderRadius: BorderRadius.circular(12)),
             contentPadding: EdgeInsets.zero,
             title: Text(sl.getText('aiSettings') ?? 'AI Settings'),
             content: SizedBox(
@@ -1153,44 +1156,92 @@ class _AiChatState extends State<AiChat> {
                   // ── Section 2: MCP Tools ───────────────────────────────
                   _buildSettingsSectionHeader(
                       ctx, sl.getText('mcpTools') ?? 'MCP Tools',
-                      trailing: Switch(
-                        value: mcpEnabled,
-                        onChanged: (v) async {
-                          setDialogState(() => mcpEnabled = v);
-                          await McpService.instance.saveConfig(enabled: v);
+                      trailing: IconButton(
+                        icon: const Icon(Icons.add, size: 20),
+                        onPressed: () async {
+                          final server = await _showMcpServerEditDialog(ctx, sl);
+                          if (server != null) {
+                            await McpService.instance.addServer(server);
+                            setDialogState(() {
+                              mcpServers = List<McpServer>.from(McpService.instance.servers);
+                            });
+                          }
                         },
                       )),
-                  const SizedBox(height: 8),
+                  const SizedBox(height: 4),
 
-                  TextField(
-                    controller: mcpUrlCtl,
-                    style: const TextStyle(fontSize: 13),
-                    decoration: InputDecoration(
-                      labelText: sl.getText('mcpServerUrl') ?? 'Server URL',
-                      isDense: true,
-                      border: const OutlineInputBorder(),
+                  if (mcpServers.isEmpty)
+                    Padding(
+                      padding: const EdgeInsets.symmetric(vertical: 8),
+                      child: Text(
+                        sl.getText('mcpNotConfigured') ?? 'Not configured',
+                        style: TextStyle(fontSize: 12,
+                            color: Theme.of(ctx).colorScheme.onSurfaceVariant),
+                      ),
                     ),
-                    onChanged: (v) => mcpUrl = v,
-                    onEditingComplete: () async {
-                      await McpService.instance.saveConfig(url: mcpUrl);
-                    },
-                  ),
-                  const SizedBox(height: 8),
-                  TextField(
-                    controller: mcpTokenCtl,
-                    style: const TextStyle(fontSize: 13),
-                    obscureText: true,
-                    decoration: InputDecoration(
-                      labelText: sl.getText('mcpAuthToken') ?? 'Bearer Token',
-                      isDense: true,
-                      border: const OutlineInputBorder(),
-                    ),
-                    onChanged: (v) => mcpToken = v,
-                    onEditingComplete: () async {
-                      await McpService.instance.saveConfig(token: mcpToken);
-                    },
-                  ),
-                  const SizedBox(height: 8),
+
+                  ...mcpServers.asMap().entries.map((entry) {
+                    final idx = entry.key;
+                    final server = entry.value;
+                    return Padding(
+                      padding: const EdgeInsets.only(bottom: 4),
+                      child: Row(
+                        children: [
+                          SizedBox(
+                            height: 28,
+                            width: 36,
+                            child: Switch(
+                              value: server.enabled,
+                              onChanged: (v) async {
+                                await McpService.instance.toggleServer(idx, v);
+                                setDialogState(() {
+                                  mcpServers = List<McpServer>.from(McpService.instance.servers);
+                                });
+                              },
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: GestureDetector(
+                              onTap: () async {
+                                final edited = await _showMcpServerEditDialog(
+                                    ctx, sl, server: server);
+                                if (edited != null) {
+                                  await McpService.instance.updateServer(idx, edited);
+                                  setDialogState(() {
+                                    mcpServers = List<McpServer>.from(McpService.instance.servers);
+                                  });
+                                }
+                              },
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(server.name,
+                                      style: const TextStyle(fontSize: 13,
+                                          fontWeight: FontWeight.w500)),
+                                  Text(server.url,
+                                      style: TextStyle(fontSize: 11,
+                                          color: Theme.of(ctx).colorScheme.onSurfaceVariant),
+                                      maxLines: 1, overflow: TextOverflow.ellipsis),
+                                ],
+                              ),
+                            ),
+                          ),
+                          IconButton(
+                            icon: const Icon(Icons.delete_outline, size: 18),
+                            onPressed: () async {
+                              await McpService.instance.removeServer(idx);
+                              setDialogState(() {
+                                mcpServers = List<McpServer>.from(McpService.instance.servers);
+                              });
+                            },
+                          ),
+                        ],
+                      ),
+                    );
+                  }),
+
+                  const SizedBox(height: 4),
                   Row(
                     children: [
                       Icon(
@@ -1215,11 +1266,9 @@ class _AiChatState extends State<AiChat> {
                       ),
                       const Spacer(),
                       TextButton(
-                        onPressed: isMcpFetching
+                        onPressed: isMcpFetching || mcpServers.where((s) => s.enabled).isEmpty
                             ? null
                             : () async {
-                                await McpService.instance.saveConfig(
-                                    url: mcpUrl, token: mcpToken);
                                 setDialogState(() => isMcpFetching = true);
                                 await McpService.instance.fetchContextOnModelReady();
                                 _conversation?.dispose();
@@ -1278,8 +1327,100 @@ class _AiChatState extends State<AiChat> {
     );
     dialogActive = false;
     urlCtl.dispose();
-    mcpUrlCtl.dispose();
-    mcpTokenCtl.dispose();
+  }
+
+  Future<McpServer?> _showMcpServerEditDialog(
+      BuildContext context, SimpleLocalizations sl,
+      {McpServer? server}) async {
+    final nameCtl = TextEditingController(text: server?.name ?? '');
+    final urlCtl = TextEditingController(text: server?.url ?? '');
+    final fallbackUrlCtl = TextEditingController(text: server?.fallbackUrl ?? '');
+    final tokenCtl = TextEditingController(text: server?.token ?? '');
+
+    final result = await showDialog<McpServer>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+        title: Text(
+          server == null
+              ? (sl.getText('mcpAddServer') ?? 'Add Server')
+              : (sl.getText('mcpEditServer') ?? 'Edit Server'),
+          style: const TextStyle(fontSize: 15),
+        ),
+        content: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              TextField(
+                controller: nameCtl,
+                style: const TextStyle(fontSize: 13),
+                decoration: InputDecoration(
+                  labelText: sl.getText('mcpServerName') ?? 'Name',
+                  isDense: true,
+                  border: const OutlineInputBorder(),
+                ),
+              ),
+              const SizedBox(height: 8),
+              TextField(
+                controller: urlCtl,
+                style: const TextStyle(fontSize: 13),
+                decoration: InputDecoration(
+                  labelText: sl.getText('mcpServerUrl') ?? 'Server URL',
+                  isDense: true,
+                  border: const OutlineInputBorder(),
+                ),
+              ),
+              const SizedBox(height: 8),
+              TextField(
+                controller: fallbackUrlCtl,
+                style: const TextStyle(fontSize: 13),
+                decoration: InputDecoration(
+                  labelText: sl.getText('mcpFallbackUrl') ?? 'Fallback URL',
+                  hintText: 'Optional',
+                  hintStyle: const TextStyle(fontSize: 12),
+                  isDense: true,
+                  border: const OutlineInputBorder(),
+                ),
+              ),
+              const SizedBox(height: 8),
+              TextField(
+                controller: tokenCtl,
+                style: const TextStyle(fontSize: 13),
+                obscureText: true,
+                decoration: InputDecoration(
+                  labelText: sl.getText('mcpAuthToken') ?? 'Bearer Token',
+                  isDense: true,
+                  border: const OutlineInputBorder(),
+                ),
+              ),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(),
+            child: Text(sl.getText('cancelLabel') ?? 'Cancel'),
+          ),
+          TextButton(
+            onPressed: () {
+              final name = nameCtl.text.trim();
+              final url = urlCtl.text.trim();
+              if (name.isEmpty || url.isEmpty) return;
+              Navigator.of(ctx).pop(McpServer(
+                name: name,
+                url: url,
+                fallbackUrl: fallbackUrlCtl.text.trim(),
+                token: tokenCtl.text.trim(),
+                enabled: server?.enabled ?? true,
+              ));
+            },
+            child: Text(sl.getText('saveLabel') ?? 'Save'),
+          ),
+        ],
+      ),
+    );
+
+    return result;
   }
 
   @override
@@ -1492,7 +1633,7 @@ class _AiChatState extends State<AiChat> {
     final sl = SimpleLocalizations.of(context)!;
 
     return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 6),
+      padding: const EdgeInsets.symmetric(vertical: 4),
       child: Row(
         mainAxisAlignment:
             isUser ? MainAxisAlignment.end : MainAxisAlignment.start,
@@ -1520,15 +1661,15 @@ class _AiChatState extends State<AiChat> {
                         color: colorScheme.primary.withValues(alpha: 0.3),
                         width: 0.5),
                 borderRadius: BorderRadius.only(
-                  topLeft: const Radius.circular(16),
+                  topLeft: Radius.circular(isUser ? 16 : 4),
                   topRight: const Radius.circular(16),
-                  bottomLeft: Radius.circular(isUser ? 16 : 4),
+                  bottomLeft: const Radius.circular(16),
                   bottomRight: Radius.circular(isUser ? 4 : 16),
                 ),
               ),
               child: Padding(
                 padding:
-                    const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                    const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
@@ -1619,8 +1760,8 @@ class _AiChatState extends State<AiChat> {
                                 msg.content,
                                 style: TextStyle(
                                   color: colorScheme.onPrimaryContainer,
-                                  fontSize: 14,
-                                  height: 1.4,
+                                  fontSize: 13,
+                                  height: 1.45,
                                 ),
                               )
                             : SelectableText.rich(
@@ -1629,8 +1770,8 @@ class _AiChatState extends State<AiChat> {
                                     msg.content,
                                     TextStyle(
                                       color: colorScheme.onSurface,
-                                      fontSize: 14,
-                                      height: 1.4,
+                                      fontSize: 13,
+                                      height: 1.45,
                                     ),
                                     colorScheme,
                                   ),
@@ -1692,10 +1833,13 @@ class _AiChatState extends State<AiChat> {
                     ),
                   ),
                   const SizedBox(width: 8),
+                  Icon(Icons.build_outlined,
+                      size: 12, color: colorScheme.onSurfaceVariant),
+                  const SizedBox(width: 4),
                   Text(
-                    '🔧 $toolName...',
+                    '$toolName...',
                     style: TextStyle(
-                      fontSize: 12,
+                      fontSize: 11,
                       color: colorScheme.onSurfaceVariant,
                     ),
                   ),
@@ -1704,52 +1848,54 @@ class _AiChatState extends State<AiChat> {
             : Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Row(
-                    children: [
-                      Icon(Icons.check_circle_outline,
-                          size: 14, color: colorScheme.primary),
-                      const SizedBox(width: 6),
-                      Text(
-                        toolName,
-                        style: TextStyle(
-                          fontSize: 12,
-                          fontWeight: FontWeight.w600,
-                          color: colorScheme.onSurfaceVariant,
+                  GestureDetector(
+                    onTap: resultText.isNotEmpty
+                        ? () {
+                            final idx = _messages.indexOf(msg);
+                            if (idx >= 0 && mounted) {
+                              setState(() {
+                                _messages[idx] =
+                                    msg.copyWith(isExpanded: !msg.isExpanded);
+                              });
+                            }
+                          }
+                        : null,
+                    child: Row(
+                      children: [
+                        Icon(Icons.build_outlined,
+                            size: 13, color: colorScheme.primary),
+                        const SizedBox(width: 6),
+                        Expanded(
+                          child: Text(
+                            toolName,
+                            style: TextStyle(
+                              fontSize: 11,
+                              fontWeight: FontWeight.w600,
+                              color: colorScheme.onSurfaceVariant,
+                            ),
+                          ),
                         ),
-                      ),
-                    ],
+                        if (resultText.isNotEmpty)
+                          Icon(
+                            msg.isExpanded
+                                ? Icons.expand_less
+                                : Icons.expand_more,
+                            size: 14,
+                            color: colorScheme.onSurfaceVariant,
+                          ),
+                      ],
+                    ),
                   ),
-                  if (resultText.isNotEmpty) ...[
+                  if (resultText.isNotEmpty && msg.isExpanded) ...[
                     const SizedBox(height: 4),
                     Text(
-                      msg.isExpanded || resultText.split('\n').length <= 3
-                          ? resultText
-                          : '${resultText.split('\n').take(3).join('\n')}...',
+                      resultText,
                       style: TextStyle(
-                        fontSize: 12,
+                        fontSize: 11,
                         color: colorScheme.onSurfaceVariant
                             .withValues(alpha: 0.8),
                       ),
                     ),
-                    if (resultText.split('\n').length > 3)
-                      GestureDetector(
-                        onTap: () {
-                          final idx = _messages.indexOf(msg);
-                          if (idx >= 0 && mounted) {
-                            setState(() {
-                              _messages[idx] =
-                                  msg.copyWith(isExpanded: !msg.isExpanded);
-                            });
-                          }
-                        },
-                        child: Text(
-                          msg.isExpanded ? '收起' : '展开',
-                          style: TextStyle(
-                            fontSize: 11,
-                            color: colorScheme.primary,
-                          ),
-                        ),
-                      ),
                   ],
                 ],
               ),
@@ -1838,14 +1984,7 @@ class _AiChatState extends State<AiChat> {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
       decoration: BoxDecoration(
-        color: colorScheme.surface,
-        boxShadow: [
-          BoxShadow(
-            color: colorScheme.shadow.withValues(alpha: 0.04),
-            blurRadius: 8,
-            offset: const Offset(0, -2),
-          ),
-        ],
+        color: colorScheme.surfaceContainerHighest,
       ),
       child: SafeArea(
         top: false,
@@ -1930,21 +2069,25 @@ class _AiChatState extends State<AiChat> {
                   Expanded(
                     child: TextField(
                       controller: _inputCtl,
-                      maxLines: 4,
+                      maxLines: 6,
                       minLines: 1,
-                      textInputAction: TextInputAction.send,
+                      textInputAction: TextInputAction.newline,
                       onSubmitted: (_) => _sendMessage(),
+                      style: const TextStyle(fontSize: 13, height: 1.4),
                       decoration: InputDecoration(
                         hintText:
                             sl.getText('aiInputHint') ?? 'Ask anything...',
-                        border: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(20),
-                          borderSide: BorderSide.none,
+                        hintStyle: TextStyle(
+                          fontSize: 13,
+                          color: colorScheme.onSurfaceVariant.withValues(alpha: 0.5),
                         ),
+                        border: InputBorder.none,
+                        enabledBorder: InputBorder.none,
+                        focusedBorder: InputBorder.none,
                         filled: true,
                         fillColor: colorScheme.surfaceContainerHighest,
                         contentPadding: const EdgeInsets.symmetric(
-                            horizontal: 16, vertical: 10),
+                            horizontal: 12, vertical: 10),
                       ),
                     ),
                   ),
@@ -1977,7 +2120,7 @@ class _AiChatState extends State<AiChat> {
         decoration: BoxDecoration(
           shape: BoxShape.circle,
           color: disabled
-              ? colorScheme.surfaceContainerHighest
+              ? Colors.transparent
               : colorScheme.primary,
         ),
         child: Center(

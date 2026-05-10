@@ -137,6 +137,14 @@ Screens read state with `Provider.of<T>(context)` and write via notifier methods
 
 Material Design 3 with `ColorScheme`. The user picks one of 16 colors (`Colors.primaries` minus brown/blueGrey); light and dark variants are generated automatically. Theme is applied at the `NoteApp` level.
 
+### UI 风格约定
+
+- **圆角**：弹窗/Dialog `borderRadius: 12`，卡片 `12`，输入框 `4`（近乎直角），气泡 `16`
+- **字号体系**：正文 13px，辅助 11-12px，时间戳 10px
+- **间距**：气泡内 padding h:12/v:8，消息间 vertical:4
+- **弹窗风格**：elevation 0，flat design，减少圆角，参照 NoteLanding 页面风格
+- **输入框**：不使用大圆角（no pill shape），细边框 + 聚焦高亮，支持多行
+
 ### On-Device AI (LiteRT-LM)
 
 `lib/service/AiService.dart` — Singleton managing LiteRT-LM engine lifecycle. Uses `flutter_litert_lm` package with Gemma-4-E4B-it model (`.litertlm` format, ~3.6GB, user-provided file).
