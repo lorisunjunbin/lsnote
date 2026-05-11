@@ -770,18 +770,24 @@ class _NoteLandingState extends State<NoteLanding>
   }
 
   Future<void> _handleCardSave(Note item, SimpleLocalizations sl) async {
-    if (_ctrls.containsKey('${item.id}cblt')) {
-      await db.updateNoteItemContent(
-          item.id!, _ctrls['${item.id}cblt']!.value.text);
-      _showMessageDialog(
-          sl.getText('contentChanged')!,
-          [
-            '${item.title}',
-            '',
-            _ctrls['${item.id}cblt']!.value.text,
-          ],
-          sl.getText('noticed')!);
-    }
+    final contentCtrl = _ctrls['${item.id}cblt'];
+    if (contentCtrl == null) return;
+    final newTitle = _ctrls['${item.id}title']?.text ?? item.title ?? '';
+    final newContent = contentCtrl.value.text;
+    final updated = Note(
+      id: item.id,
+      title: newTitle,
+      content: newContent,
+      sequence: item.sequence,
+      isDone: item.isDone,
+      targetDate: item.targetDate,
+    );
+    await db.updateNote(updated);
+    await _updateUI(context);
+    _showMessageDialog(
+        sl.getText('contentChanged')!,
+        [newTitle, '', newContent],
+        sl.getText('noticed')!);
   }
 
   Future<void> _handleCardCopy(Note item, SimpleLocalizations sl) async {
@@ -1279,6 +1285,8 @@ class _NoteLandingState extends State<NoteLanding>
 
       _ctrls.putIfAbsent(
           '${item.id}cblt', () => TextEditingController(text: item.content));
+      _ctrls.putIfAbsent(
+          '${item.id}title', () => TextEditingController(text: item.title));
 
       final isExpanded = _cardExpandedStates[item.id!] ?? false;
 
@@ -1292,8 +1300,10 @@ class _NoteLandingState extends State<NoteLanding>
           shape: RoundedRectangleBorder(
             side: !item.isDone
                 ? BorderSide(
-                    color: colorScheme.primary.withValues(alpha: 0.55),
-                    width: 0.35,
+                    color: isExpanded
+                        ? colorScheme.primary.withValues(alpha: 0.8)
+                        : colorScheme.primary.withValues(alpha: 0.55),
+                    width: isExpanded ? 1.0 : 0.35,
                   )
                 : BorderSide.none,
               borderRadius: BorderRadius.zero,
@@ -1306,28 +1316,34 @@ class _NoteLandingState extends State<NoteLanding>
             child: Row(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Padding(
-                  padding: EdgeInsets.zero,
-                  child: Checkbox(
-                    value: item.isDone,
-                    visualDensity: VisualDensity.compact,
-                    materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                    onChanged: (bool? newValue) {
-                      setState(() => item.isDone = newValue ?? false);
-                      db.toggleNoteItem(item);
-                      final sp = Provider.of<SwitcherChangeNotifier>(
-                          context, listen: false);
-                      if (sp.isHiddenDone() && newValue == true) {
-                        _animateRemoval(item.id!, () async {
-                          await _updateUI(context);
-                        });
-                      }
-                    },
+                if (!isExpanded) ...[
+                  Padding(
+                    padding: EdgeInsets.zero,
+                    child: Checkbox(
+                      value: item.isDone,
+                      visualDensity: VisualDensity.compact,
+                      materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                      onChanged: (bool? newValue) {
+                        setState(() => item.isDone = newValue ?? false);
+                        db.toggleNoteItem(item);
+                        final sp = Provider.of<SwitcherChangeNotifier>(
+                            context, listen: false);
+                        if (sp.isHiddenDone() && newValue == true) {
+                          _animateRemoval(item.id!, () async {
+                            await _updateUI(context);
+                          });
+                        }
+                      },
+                    ),
                   ),
-                ),
-                const SizedBox(width: 0),
+                  const SizedBox(width: 0),
+                ],
                 Expanded(
-                  child: Column(
+                  child: AnimatedSize(
+                    duration: const Duration(milliseconds: 200),
+                    curve: Curves.easeOut,
+                    alignment: Alignment.topCenter,
+                    child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Row(
@@ -1345,18 +1361,54 @@ class _NoteLandingState extends State<NoteLanding>
                                     size: 24,
                                   ),
                                   const SizedBox(width: 4),
-                                  Expanded(
-                                    child: Text(
-                                      '${item.title}',
-                                      style: TextStyle(
-                                        color: item.isDone
-                                            ? colorScheme.onSurfaceVariant
-                                            : colorScheme.onSurface,
-                                        fontSize: 15,
-                                        fontWeight: FontWeight.w600,
+                                  if (isExpanded)
+                                    Expanded(
+                                      child: TextField(
+                                        controller: _ctrls['${item.id}title'],
+                                        style: TextStyle(
+                                          fontSize: 15,
+                                          fontWeight: FontWeight.w600,
+                                          color: item.isDone
+                                              ? colorScheme.onSurfaceVariant
+                                              : colorScheme.onSurface,
+                                        ),
+                                        decoration: InputDecoration(
+                                          isDense: true,
+                                          border: InputBorder.none,
+                                          contentPadding: const EdgeInsets.symmetric(
+                                              horizontal: 4, vertical: 4),
+                                          filled: true,
+                                          fillColor: item.isDone
+                                              ? colorScheme.surfaceContainerHighest
+                                              : colorScheme.surface,
+                                          enabledBorder: const OutlineInputBorder(
+                                            borderSide: BorderSide.none,
+                                            borderRadius: BorderRadius.zero,
+                                          ),
+                                          focusedBorder: OutlineInputBorder(
+                                            borderSide: BorderSide(
+                                              color: colorScheme.primary,
+                                              width: 1.5,
+                                            ),
+                                            borderRadius: BorderRadius.zero,
+                                          ),
+                                        ),
+                                        textCapitalization: TextCapitalization.sentences,
+                                      ),
+                                    )
+                                  else
+                                    Expanded(
+                                      child: Text(
+                                        '${item.title}',
+                                        style: TextStyle(
+                                          color: item.isDone
+                                              ? colorScheme.onSurfaceVariant
+                                              : colorScheme.onSurface,
+                                          fontSize: 15,
+                                          fontWeight: FontWeight.w600,
+                                        ),
                                       ),
                                     ),
-                                  ),
                                 ],
                               ),
                             ),
@@ -1547,6 +1599,7 @@ class _NoteLandingState extends State<NoteLanding>
                         ),
                       ],
                     ],
+                  ),
                   ),
                 ),
               ],
