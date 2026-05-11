@@ -18,6 +18,7 @@ import 'Backup.dart';
 import 'NoteItem.dart';
 import '../NoteApp.dart';
 import '../service/AiPrompts.dart';
+import '../service/McpService.dart';
 import '../service/AiService.dart';
 import 'AiChat.dart';
 
@@ -113,12 +114,13 @@ class _NoteLandingState extends State<NoteLanding>
 
     _reorderInFlight = true;
     try {
-      await db.renumberNoteSequences(_items, step: _sequenceStep);
+      // Only update the affected range [lo, hi]
+      final lo = oldIndex < newIdx ? oldIndex : newIdx;
+      final hi = oldIndex < newIdx ? newIdx : oldIndex;
+      await db.renumberRangeSequences(_items, lo, hi, step: _sequenceStep);
     } catch (_) {
       await _reloadData(context);
-      if (mounted) {
-        setState(() {});
-      }
+      if (mounted) setState(() {});
     } finally {
       _reorderInFlight = false;
     }
@@ -150,6 +152,14 @@ class _NoteLandingState extends State<NoteLanding>
     if (_welcomeRequested || !AiService.instance.isReady) return;
     if (AiService.instance.isThinkingModel) return;
     _welcomeRequested = true;
+
+    // Wait briefly for MCP context (weather/holiday) to be fetched
+    if (McpService.instance.isEnabled && McpService.instance.contextCache.isEmpty) {
+      for (int i = 0; i < 10; i++) {
+        await Future.delayed(const Duration(milliseconds: 500));
+        if (McpService.instance.contextCache.isNotEmpty) break;
+      }
+    }
 
     final hour = DateTime.now().hour;
     final timeOfDay = hour < 6
@@ -337,19 +347,38 @@ class _NoteLandingState extends State<NoteLanding>
     setState(() => _isTranscribing = true);
 
     try {
-      final systemPrompt = AiPrompts.landingTranscribe();
-      final transcription =
-          await AiService.instance.completeAudio(systemPrompt, audioPath, null);
+      final transcription = await AiService.instance
+          .completeAudio(AiPrompts.landingTranscribe(), audioPath, null);
 
       if (transcription.trim().isEmpty) return;
 
-      final title = transcription.trim().length > 20
-          ? transcription.trim().substring(0, 20)
-          : transcription.trim();
+      // Use AI to extract title and content
+      String title = '';
+      String content = transcription.trim();
+
+      final buffer = StringBuffer();
+      await AiService.instance
+          .completeStream(
+            AiPrompts.extractNoteStructure(),
+            transcription.trim(),
+            maxLength: 200,
+          )
+          .forEach((token) => buffer.write(token));
+
+      final structured = buffer.toString().trim();
+      final titleMatch = RegExp(r'TITLE:\s*(.+)', caseSensitive: false).firstMatch(structured);
+      final contentMatch = RegExp(r'CONTENT:\s*([\s\S]+)', caseSensitive: false).firstMatch(structured);
+      if (titleMatch != null) title = titleMatch.group(1)!.trim();
+      if (contentMatch != null) content = contentMatch.group(1)!.trim();
+
+      // Fallback if parsing failed
+      if (title.isEmpty) {
+        title = content.length > 20 ? content.substring(0, 20) : content;
+      }
 
       final note = Note(
         title: title,
-        content: transcription.trim(),
+        content: content,
         targetDate: DateTime.now(),
         sequence: 0,
         isDone: false,
@@ -814,7 +843,10 @@ class _NoteLandingState extends State<NoteLanding>
         builder: (dialogContext) {
           return StatefulBuilder(
             builder: (context, setDialogState) {
+              final currentColor = AppTheme.themeColorPalette[_currentColorIndex];
+              final currentScheme = ColorScheme.fromSeed(seedColor: currentColor);
               return AlertDialog(
+                  backgroundColor: currentScheme.surface,
                   shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(24),
                   ),
@@ -822,13 +854,14 @@ class _NoteLandingState extends State<NoteLanding>
                   contentPadding: const EdgeInsets.fromLTRB(24, 8, 24, 24),
                   title: Row(
                     children: [
-                      Icon(Icons.palette_rounded, color: colorScheme.primary),
+                      Icon(Icons.palette_rounded, color: currentScheme.primary),
                       const SizedBox(width: 12),
                       Text(
                         sl.getText('colorPicker')!,
                         style: TextStyle(
                           fontSize: 22,
                           fontWeight: FontWeight.w600,
+                          color: currentScheme.onSurface,
                         ),
                       ),
                     ],
@@ -842,6 +875,8 @@ class _NoteLandingState extends State<NoteLanding>
                       children: List.generate(AppTheme.themeColorPalette.length, (index) {
                         final color = AppTheme.themeColorPalette[index];
                         final isSelected = index == _currentColorIndex;
+                        final luminance = color.computeLuminance();
+                        final checkColor = luminance > 0.5 ? Colors.black87 : Colors.white;
                         return InkWell(
                           onTap: () {
                             final themeNotifier = Provider.of<ThemeChangeNotifier>(dialogContext, listen: false);
@@ -863,23 +898,23 @@ class _NoteLandingState extends State<NoteLanding>
                               shape: BoxShape.circle,
                               border: Border.all(
                                 color: isSelected
-                                    ? colorScheme.onSurface
-                                    : Colors.transparent,
-                                width: 3,
+                                    ? currentScheme.primary
+                                    : color.withValues(alpha: 0.3),
+                                width: isSelected ? 3 : 1,
                               ),
                               boxShadow: isSelected
                                   ? [
                                       BoxShadow(
-                                        color: color.withValues(alpha: 0.5),
-                                        blurRadius: 12,
-                                        spreadRadius: 2,
+                                        color: color.withValues(alpha: 0.4),
+                                        blurRadius: 8,
+                                        spreadRadius: 1,
                                       )
                                     ]
                                   : null,
                             ),
                             child: isSelected
                                 ? Icon(Icons.check_rounded,
-                                    color: Colors.white, size: 24)
+                                    color: checkColor, size: 24)
                                 : null,
                           ),
                         );
@@ -887,12 +922,26 @@ class _NoteLandingState extends State<NoteLanding>
                     ),
                   ),
                   actions: <Widget>[
+                    if (AiService.instance.isReady && !AiService.instance.isThinkingModel)
+                      TextButton.icon(
+                        icon: Icon(Icons.auto_awesome, size: 16, color: currentScheme.primary),
+                        label: Text(
+                          sl.getText('aiRecommendColor') ?? 'AI Recommend',
+                          style: TextStyle(
+                            fontWeight: FontWeight.w600,
+                            fontSize: 14,
+                            color: currentScheme.primary,
+                          ),
+                        ),
+                        onPressed: () => _aiRecommendColor(dialogContext, setDialogState),
+                      ),
                     TextButton(
                         child: Text(
                           sl.getText('colorPickerClose')!,
-                          style: const TextStyle(
+                          style: TextStyle(
                             fontWeight: FontWeight.w600,
                             fontSize: 16,
+                            color: currentScheme.primary,
                           ),
                         ),
                         onPressed: () {
@@ -955,6 +1004,41 @@ class _NoteLandingState extends State<NoteLanding>
         onError: (_) {},
       );
       _aiSubs.add(sub);
+    } catch (_) {}
+  }
+
+  void _aiRecommendColor(BuildContext dialogContext, void Function(void Function()) setDialogState) async {
+    if (!AiService.instance.isReady) return;
+
+    final mcpCtx = McpService.instance.contextCache;
+    final colorNames = [
+      'red', 'pink', 'purple', 'deepPurple', 'indigo', 'blue',
+      'lightBlue', 'cyan', 'teal', 'green', 'lightGreen', 'lime',
+      'yellow', 'amber', 'orange', 'deepOrange',
+    ];
+
+    final buffer = StringBuffer();
+    try {
+      await AiService.instance
+          .completeStream(
+            AiPrompts.recommendColor(mcpCtx, colorNames),
+            'recommend',
+            maxLength: 30,
+          )
+          .forEach((token) => buffer.write(token));
+
+      final result = buffer.toString().trim().toLowerCase();
+      final matchIndex = colorNames.indexWhere((name) => result.contains(name.toLowerCase()));
+      if (matchIndex >= 0 && matchIndex < AppTheme.themeColorPalette.length) {
+        final color = AppTheme.themeColorPalette[matchIndex];
+        final themeNotifier = Provider.of<ThemeChangeNotifier>(dialogContext, listen: false);
+        themeNotifier.setTheme(AppTheme.getLightTheme(color));
+        db.setConfig(Config.primarySwatch, matchIndex.toString());
+        setDialogState(() {
+          _currentColorIndex = matchIndex;
+        });
+        setState(() {});
+      }
     } catch (_) {}
   }
 

@@ -1,4 +1,5 @@
 import 'AiService.dart';
+import 'McpService.dart';
 
 class AiPrompts {
   static String get _ctx => AiService.instance.contextInfo;
@@ -7,8 +8,13 @@ class AiPrompts {
 
   // === Lightweight scenes (completeStream, short output) ===
 
-  static String greeting(String topic) =>
-      'You are a witty, humorous assistant in a note app. Generate a single short funny greeting about "$topic" (1 sentence, under 20 words). Be creative, use wordplay. NEVER repeat a previous greeting. Output ONLY the greeting. $_lang';
+  static String greeting(String topic) {
+    final mcpCtx = McpService.instance.contextCache;
+    if (mcpCtx.isNotEmpty) {
+      return 'You are a witty, humorous assistant in a note app. Today\'s context:\n$mcpCtx\nGenerate a single short greeting incorporating today\'s date, weather, or notable info from context above (1 sentence, under 25 words). Be warm and informative. NEVER repeat. Output ONLY the greeting. $_lang';
+    }
+    return 'You are a witty, humorous assistant in a note app. Generate a single short funny greeting about "$topic" (1 sentence, under 20 words). Be creative, use wordplay. NEVER repeat a previous greeting. Output ONLY the greeting. $_lang';
+  }
 
   static String colorCompliment(String colorName) =>
       'You are a cheerful assistant. Give a single short compliment about the color "$colorName" (under 15 words). Be creative and fun. NEVER repeat. Output ONLY the compliment. $_lang';
@@ -65,8 +71,26 @@ class AiPrompts {
   static String landingTranscribe() =>
       '$_ctx\nTranscribe audio accurately. Output only the text.';
 
+  static String extractNoteStructure() =>
+      'Extract a concise title and the full content from the following note text. Format your response EXACTLY as:\nTITLE: <title>\nCONTENT: <content>\nThe title should be a short phrase (under 15 words) summarizing the main point. The content is the complete text. $_lang';
+
   // === Landing page note organize (inline) ===
 
   static String landingOrganize() =>
       'Organize into structured note with bullet points. Keep all info. No preamble. $_ctx';
+
+  // === MCP context summarization ===
+
+  static String summarizeContext() =>
+      'Summarize the following raw data into a brief, user-friendly daily info card (2-4 lines). Include: weather, lunar date, holidays, and auspicious activities if available. Use simple language. Output ONLY the summary. $_lang';
+
+  // === Color recommendation ===
+
+  static String recommendColor(String context, List<String> colorNames) {
+    final colors = colorNames.join(', ');
+    final ctx = context.isNotEmpty
+        ? 'Based on today\'s context:\n$context\n'
+        : '';
+    return '${ctx}Pick ONE color from this list that best matches today\'s mood/weather/season: [$colors]. Output ONLY the color name, nothing else.';
+  }
 }

@@ -19,11 +19,17 @@ class McpService {
   List<McpTool> _mcpTools = [];
   Map<String, McpServer> _toolServerMap = {};
   int _requestId = 0;
+  void Function()? onContextReady;
 
   bool get isEnabled => _servers.any((s) => s.enabled && s.url.isNotEmpty);
   bool get isReady => _isReady;
   String get contextCache => _contextCache;
   List<McpServer> get servers => _servers;
+
+  void setContextCache(String value) {
+    _contextCache = value;
+    onContextReady?.call();
+  }
 
   List<LiteLmTool> get tools {
     if (!isEnabled) return [];
@@ -104,8 +110,8 @@ class McpService {
   }
 
   static const List<String> _contextToolKeywords = [
-    'weather', 'holiday', 'time', 'date', 'calendar',
-    '天气', '节日', '时间', '日历',
+    'weather', '天气',
+    'holiday', 'almanac', 'huangli', '节日', '黄历', '农历',
   ];
 
   bool _isContextTool(String name) {
@@ -122,7 +128,8 @@ class McpService {
 
     final enabledServers = _servers.where((s) => s.enabled && s.url.isNotEmpty);
 
-    for (final server in enabledServers) {
+    // Fetch tool lists from all servers in parallel
+    await Future.wait(enabledServers.map((server) async {
       try {
         final toolsBody = jsonEncode({
           'jsonrpc': '2.0',
@@ -142,20 +149,20 @@ class McpService {
           _toolServerMap[tool.name] = server;
         }
       } catch (_) {}
-    }
+    }));
 
-    final contextBuffer = StringBuffer();
-    for (final tool in _mcpTools) {
-      if (!_isContextTool(tool.name)) continue;
+    // Call context tools in parallel
+    final contextTools = _mcpTools.where((t) => _isContextTool(t.name)).toList();
+    final results = await Future.wait(contextTools.map((tool) async {
       try {
         final args = _buildDefaultArgs(tool);
         final result = await callTool(tool.name, args);
-        if (result.isNotEmpty) {
-          contextBuffer.writeln('${tool.name}: $result');
-        }
+        if (result.isNotEmpty) return '${tool.name}: $result';
       } catch (_) {}
-    }
-    _contextCache = contextBuffer.toString().trim();
+      return '';
+    }));
+
+    _contextCache = results.where((r) => r.isNotEmpty).join('\n').trim();
     _isReady = _mcpTools.isNotEmpty;
   }
 

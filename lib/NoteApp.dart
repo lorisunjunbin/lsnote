@@ -285,6 +285,16 @@ class NoteApp extends StatelessWidget {
       await db.ensureConfig(Config.mcpAuthHeader, '');
       await AiService.instance.loadConfig();
       await McpService.instance.init();
+      // One-time migration: normalize sequence to integer steps
+      await db.ensureConfig(Config.sequenceNormalized, '0');
+      final normalized = await db.getConfig(Config.sequenceNormalized);
+      if (normalized.value != '1') {
+        final allNotes = await db.getNotesAll();
+        if (allNotes.isNotEmpty) {
+          await db.renumberNoteSequences(allNotes, step: NoteAccessSqlite.sequenceStep);
+        }
+        db.setConfig(Config.sequenceNormalized, '1');
+      }
       if (AiService.instance.modelPath.isNotEmpty) {
         AiService.instance.initialize();
       }

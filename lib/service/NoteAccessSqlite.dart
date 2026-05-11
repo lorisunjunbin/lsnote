@@ -235,6 +235,30 @@ class NoteAccessSqlite {
       ''', [note.id]);
   }
 
+  Future<void> updateNoteSequence(int id, int sequence) async {
+    await _database!.rawUpdate(
+      'UPDATE notes SET sequence = ? WHERE id = ?',
+      [sequence, id],
+    );
+  }
+
+  // Only re-sequence the affected range [lo..hi] after a drag
+  Future<void> renumberRangeSequences(List<Note> notes, int lo, int hi,
+      {int step = sequenceStep}) async {
+    await _database!.transaction((Transaction txn) async {
+      final batch = txn.batch();
+      for (var i = lo; i <= hi; i++) {
+        final sequence = i * step;
+        notes[i].sequence = sequence;
+        batch.rawUpdate(
+          'UPDATE notes SET sequence = ? WHERE id = ?',
+          [sequence, notes[i].id],
+        );
+      }
+      await batch.commit(noResult: true);
+    });
+  }
+
   Future<void> renumberNoteSequences(List<Note> notes,
       {int step = sequenceStep}) async {
     await _database!.transaction((Transaction txn) async {

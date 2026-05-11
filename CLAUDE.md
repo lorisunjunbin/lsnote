@@ -91,6 +91,10 @@ flutter analyze lib/some_file.dart
 
 # Check outdated packages
 flutter pub outdated
+
+# Deploy to phone (USB debug connected)
+./deploy.sh --debug    # debug build + install
+./deploy.sh            # release build + install
 ```
 
 ## Release Workflow

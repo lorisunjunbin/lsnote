@@ -53,6 +53,9 @@ class _AiChatState extends State<AiChat> {
   void initState() {
     super.initState();
     _checkModelReady();
+    McpService.instance.onContextReady = () {
+      if (mounted) setState(() {});
+    };
   }
 
   void _checkModelReady() async {
@@ -67,6 +70,7 @@ class _AiChatState extends State<AiChat> {
 
   @override
   void dispose() {
+    McpService.instance.onContextReady = null;
     _streamSub?.cancel();
     _conversation?.dispose();
     _recordingTimer?.cancel();
@@ -1574,12 +1578,78 @@ class _AiChatState extends State<AiChat> {
                   ),
                 ),
               ),
+            if (AiService.instance.isReady && McpService.instance.isEnabled && McpService.instance.contextCache.isEmpty)
+              Container(
+                width: double.infinity,
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+                color: colorScheme.tertiaryContainer.withValues(alpha: 0.3),
+                child: Row(
+                  children: [
+                    Icon(
+                      Icons.cloud_sync_outlined,
+                      size: 14,
+                      color: colorScheme.tertiary,
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        'MCP ${sl.getText('aiMcpFetching') ?? 'fetching context...'}',
+                        style: TextStyle(
+                            fontSize: 11, color: colorScheme.tertiary),
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
             Expanded(
               child: _messages.isEmpty
-                  ? Center(
+                  ? SingleChildScrollView(
                       child: Column(
-                        mainAxisAlignment: MainAxisAlignment.center,
                         children: [
+                          if (McpService.instance.contextCache.isNotEmpty)
+                            Container(
+                              width: double.infinity,
+                              margin: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+                              padding: const EdgeInsets.all(14),
+                              decoration: BoxDecoration(
+                                color: colorScheme.surfaceContainerLow,
+                                borderRadius: BorderRadius.circular(12),
+                                border: Border.all(
+                                  color: colorScheme.outlineVariant.withValues(alpha: 0.5),
+                                ),
+                              ),
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Row(
+                                    children: [
+                                      Icon(Icons.wb_sunny_outlined, size: 16, color: colorScheme.primary),
+                                      const SizedBox(width: 6),
+                                      Text(
+                                        sl.getText('aiTodayInfo') ?? 'Today',
+                                        style: TextStyle(
+                                          fontSize: 13,
+                                          fontWeight: FontWeight.w600,
+                                          color: colorScheme.primary,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                  const SizedBox(height: 8),
+                                  Text(
+                                    McpService.instance.contextCache,
+                                    style: TextStyle(
+                                      fontSize: 12,
+                                      color: colorScheme.onSurfaceVariant,
+                                      height: 1.5,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          const SizedBox(height: 24),
                           Icon(Icons.auto_awesome,
                               size: 48,
                               color: colorScheme.primary.withValues(alpha: 0.4)),

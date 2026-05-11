@@ -6,6 +6,7 @@ import 'package:path_provider/path_provider.dart';
 
 import 'NoteAccessSqlite.dart';
 import 'McpService.dart';
+import 'AiPrompts.dart';
 import '../model/Config.dart';
 
 enum AiServiceState { uninitialized, loading, ready, error }
@@ -302,7 +303,7 @@ class AiService {
         ),
       );
       _state = AiServiceState.ready;
-      McpService.instance.fetchContextOnModelReady();
+      _fetchAndSummarizeContext();
       return true;
     } catch (e) {
       if (_backend == 'gpu') {
@@ -316,7 +317,7 @@ class AiService {
           _backend = 'cpu';
           db.setConfig(Config.aiBackend, 'cpu');
           _state = AiServiceState.ready;
-          McpService.instance.fetchContextOnModelReady();
+          _fetchAndSummarizeContext();
           return true;
         } catch (fallbackError) {
           _errorMessage = fallbackError.toString();
@@ -667,6 +668,24 @@ class AiService {
     await _engine?.dispose();
     _engine = null;
     _state = AiServiceState.uninitialized;
+  }
+
+  void _fetchAndSummarizeContext() async {
+    await McpService.instance.fetchContextOnModelReady();
+    final raw = McpService.instance.contextCache;
+    if (raw.isEmpty || _engine == null) return;
+    try {
+      final buffer = StringBuffer();
+      await completeStream(
+        AiPrompts.summarizeContext(),
+        raw,
+        maxLength: 200,
+      ).forEach((token) => buffer.write(token));
+      final summary = buffer.toString().trim();
+      if (summary.isNotEmpty) {
+        McpService.instance.setContextCache(summary);
+      }
+    } catch (_) {}
   }
 }
 

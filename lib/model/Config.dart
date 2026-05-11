@@ -9,6 +9,7 @@ class Config {
   static final String mcpServerUrl = "mcpServerUrl";
   static final String mcpAuthHeader = "mcpAuthHeader";
   static final String mcpServers = "mcpServers";
+  static final String sequenceNormalized = "sequenceNormalized";
 
   final int? id;
   final String? name;

@@ -230,7 +230,7 @@ class McpService {
     '天气', '节日', '时间', '日历',
   ];
 
-  bool _isContextTool(String name) {
+  bool (String name) {
     final lower = name.toLowerCase();
     return _contextToolKeywords.any((kw) => lower.contains(kw));
   }
