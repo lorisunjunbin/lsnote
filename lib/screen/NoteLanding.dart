@@ -57,7 +57,7 @@ class _NoteLandingState extends State<NoteLanding>
   final Set<int> _removingIds = {};
   final Map<int, AnimationController> _removeAnimations = {};
 
-  void _animateRemoval(int id, VoidCallback onComplete) {
+  void _animateRemoval(int id, Future<void> Function() onComplete) {
     if (_removingIds.contains(id)) return;
     final controller = AnimationController(
       duration: const Duration(milliseconds: 300),
@@ -65,14 +65,12 @@ class _NoteLandingState extends State<NoteLanding>
     );
     _removeAnimations[id] = controller;
     setState(() => _removingIds.add(id));
-    controller.forward().then((_) {
+    controller.forward().then((_) async {
       if (!mounted) return;
-      setState(() {
-        _removingIds.remove(id);
-        _removeAnimations.remove(id);
-      });
+      _removingIds.remove(id);
+      _removeAnimations.remove(id);
       controller.dispose();
-      onComplete();
+      await onComplete();
     });
   }
 
@@ -795,7 +793,7 @@ class _NoteLandingState extends State<NoteLanding>
     if (item.isDone) {
       showDialog<void>(
           context: context,
-          builder: (context) {
+          builder: (dialogCtx) {
             return AlertDialog(
                 shape: RoundedRectangleBorder(
                   borderRadius: BorderRadius.circular(20),
@@ -812,15 +810,15 @@ class _NoteLandingState extends State<NoteLanding>
                 actions: <Widget>[
                   TextButton(
                     child: Text(sl.getText('cancelLabel') ?? 'Cancel'),
-                    onPressed: () => Navigator.of(context).pop(),
+                    onPressed: () => Navigator.of(dialogCtx).pop(),
                   ),
                   TextButton(
                       child: Text(sl.getText('confirmYes')!),
                       onPressed: () {
-                        Navigator.of(context).pop();
-                        _animateRemoval(item.id!, () {
-                          db.deleteNoteItem(item);
-                          _updateUI(context);
+                        Navigator.of(dialogCtx).pop();
+                        _animateRemoval(item.id!, () async {
+                          await db.deleteNoteItem(item);
+                          await _updateUI(context);
                         });
                       })
                 ]);
@@ -1285,7 +1283,6 @@ class _NoteLandingState extends State<NoteLanding>
       final isExpanded = _cardExpandedStates[item.id!] ?? false;
 
       Widget card = Padding(
-        key: Key('${item.id}'),
         padding: const EdgeInsets.symmetric(vertical: 0),
         child: Card(
           elevation: 0,
@@ -1321,8 +1318,8 @@ class _NoteLandingState extends State<NoteLanding>
                       final sp = Provider.of<SwitcherChangeNotifier>(
                           context, listen: false);
                       if (sp.isHiddenDone() && newValue == true) {
-                        _animateRemoval(item.id!, () {
-                          _updateUI(context);
+                        _animateRemoval(item.id!, () async {
+                          await _updateUI(context);
                         });
                       }
                     },
@@ -1568,13 +1565,16 @@ class _NoteLandingState extends State<NoteLanding>
           begin: 1.0,
           end: 0.0,
         ).animate(CurvedAnimation(parent: controller, curve: Curves.easeIn));
-        card = SlideTransition(
-          position: slideAnimation,
-          child: FadeTransition(opacity: fadeAnimation, child: card),
+        return SizedBox(
+          key: Key('${item.id}'),
+          child: SlideTransition(
+            position: slideAnimation,
+            child: FadeTransition(opacity: fadeAnimation, child: card),
+          ),
         );
       }
 
-      return card;
+      return KeyedSubtree(key: Key('${item.id}'), child: card);
     }).toList();
 
     return _listTiles;

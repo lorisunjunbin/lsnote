@@ -95,6 +95,9 @@ flutter pub outdated
 # Deploy to phone (USB debug connected)
 ./deploy.sh --debug    # debug build + install
 ./deploy.sh            # release build + install
+
+# Install release APK directly (after build)
+adb install -r build/app/outputs/flutter-apk/app-release.apk
 ```
 
 ## Release Workflow
@@ -245,3 +248,7 @@ try {
 - **record package**: `record_linux` 与 `record_platform_interface` 版本不兼容会导致 Android build 失败。通过 `dependency_overrides` 中 `record_linux: ^1.3.0` 解决
 - **NoteAccessSqlite API**: 添加笔记用 `db.addNote(note)`；删除用 `db.deleteNoteItem(item)`；更新内容用 `db.updateNoteItemContent(id, text)`
 - **bin/ 目录已 gitignore**：APK release 文件上传到 GitHub Release，不 commit 到 git（GitHub 100MB 文件限制）
+- **getConfig 必须先 ensureConfig**：`db.getConfig(key)` 内部用 `.first`，key 不存在时抛 StateError。任何新增 config key 必须先调 `db.ensureConfig(key, defaultValue)` 再 `getConfig`
+- **Drag-drop 排序策略**：区间重编号 `renumberRangeSequences(items, lo, hi, step: 1024)`，只更新受影响的 [lo..hi] 区间，整数步进，不用中点插入也不全量重排
+- **McpService.onContextReady 回调**：`fetchContextOnModelReady` 完成后通过 `setContextCache` 触发回调通知 UI 刷新，页面 dispose 时需置 null
+- **iOS build**: 需 `brew install cocoapods`（系统 Ruby 的 pod 有 ffi 兼容问题）；deployment target >= 14.0（file_picker 要求）
