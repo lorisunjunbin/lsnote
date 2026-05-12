@@ -7,7 +7,7 @@ S22Ultra and S24U and S26U
 - import/export data manually(backup before remove the app), standard json format
 - fingerprint authentication for app lock, if device support it
 
-## On-Device AI (v1.4.4)
+## On-Device AI
 
 Powered by **Gemma 4 E4B-it** via LiteRT-LM, all AI features run locally on-device — no network required.
 
