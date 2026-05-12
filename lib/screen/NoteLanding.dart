@@ -523,7 +523,7 @@ class _NoteLandingState extends State<NoteLanding>
   Widget _buildSearchBar(SimpleLocalizations? sl, ColorScheme colorScheme,
       SwitcherChangeNotifier switcherProvider) {
     return Container(
-      height: 48,
+      height: 46,
       decoration: BoxDecoration(
         color: colorScheme.surfaceContainerHighest,
       ),
@@ -545,13 +545,18 @@ class _NoteLandingState extends State<NoteLanding>
                   _updateUI(context);
                 }
               },
+              style: const TextStyle(fontSize: 14),
               decoration: InputDecoration(
                 hintText: sl?.getText('search'),
-                hintStyle: TextStyle(color: colorScheme.onSurfaceVariant),
-                prefixIcon: Icon(Icons.search, color: colorScheme.onSurfaceVariant),
+                hintStyle: TextStyle(
+                  color: colorScheme.onSurfaceVariant.withValues(alpha: 0.6),
+                  fontSize: 13,
+                ),
+                prefixIcon: Icon(Icons.search, color: colorScheme.onSurfaceVariant, size: 20),
+                prefixIconConstraints: const BoxConstraints(minWidth: 36),
                 suffixIcon: _items.isNotEmpty
                     ? IconButton(
-                        icon: Icon(Icons.clear, color: colorScheme.onSurfaceVariant),
+                        icon: Icon(Icons.clear, color: colorScheme.onSurfaceVariant, size: 18),
                         onPressed: () {
                           _updateUI(context);
                         },
@@ -562,8 +567,8 @@ class _NoteLandingState extends State<NoteLanding>
                 focusedBorder: InputBorder.none,
                 disabledBorder: InputBorder.none,
                 contentPadding: const EdgeInsets.symmetric(
-                  horizontal: 16,
-                  vertical: 10,
+                  horizontal: 12,
+                  vertical: 8,
                 ),
               ),
             ),
@@ -1294,18 +1299,21 @@ class _NoteLandingState extends State<NoteLanding>
         padding: const EdgeInsets.symmetric(vertical: 0),
         child: Card(
           elevation: 0,
-          color: item.isDone
+          color: item.isDone || isExpanded
               ? colorScheme.surfaceContainerLowest
               : colorScheme.surfaceContainerLow,
           shape: RoundedRectangleBorder(
-            side: !item.isDone
+            side: isExpanded
                 ? BorderSide(
-                    color: isExpanded
-                        ? colorScheme.primary.withValues(alpha: 0.8)
-                        : colorScheme.primary.withValues(alpha: 0.55),
-                    width: isExpanded ? 1.0 : 0.35,
+                    color: colorScheme.primary.withValues(alpha: 0.8),
+                    width: 1.0,
                   )
-                : BorderSide.none,
+                : !item.isDone
+                    ? BorderSide(
+                        color: colorScheme.primary.withValues(alpha: 0.55),
+                        width: 0.35,
+                      )
+                    : BorderSide.none,
               borderRadius: BorderRadius.zero,
             ),
           child: Padding(
@@ -1378,9 +1386,7 @@ class _NoteLandingState extends State<NoteLanding>
                                           contentPadding: const EdgeInsets.symmetric(
                                               horizontal: 4, vertical: 4),
                                           filled: true,
-                                          fillColor: item.isDone
-                                              ? colorScheme.surfaceContainerHighest
-                                              : colorScheme.surface,
+                                          fillColor: colorScheme.surfaceContainerLowest,
                                           enabledBorder: const OutlineInputBorder(
                                             borderSide: BorderSide.none,
                                             borderRadius: BorderRadius.zero,
@@ -1410,6 +1416,19 @@ class _NoteLandingState extends State<NoteLanding>
                                       ),
                                     ),
                                 ],
+                              ),
+                            ),
+                          ),
+                          if (isExpanded) const SizedBox(width: 5),
+                          Padding(
+                            padding: const EdgeInsets.only(top: 4, right: 4),
+                            child: Text(
+                              item.targetDate!.year == DateTime.now().year
+                                  ? '${item.targetDate.toString().substring(5, 10)}'
+                                  : '${item.targetDate.toString().substring(0, 10)}',
+                              style: TextStyle(
+                                color: colorScheme.onSurfaceVariant.withValues(alpha: 0.6),
+                                fontSize: 10,
                               ),
                             ),
                           ),
@@ -1444,9 +1463,7 @@ class _NoteLandingState extends State<NoteLanding>
                             border: InputBorder.none,
                             contentPadding: const EdgeInsets.all(8),
                             filled: true,
-                            fillColor: item.isDone
-                                ? colorScheme.surfaceContainerHighest
-                                : colorScheme.surface,
+                            fillColor: colorScheme.surfaceContainerLowest,
                             enabledBorder: const OutlineInputBorder(
                               borderSide: BorderSide.none,
                               borderRadius: BorderRadius.zero,
@@ -1473,36 +1490,6 @@ class _NoteLandingState extends State<NoteLanding>
                             final lines = text.isEmpty ? 0 : text.split('\n').length;
                             return Row(
                               children: [
-                                Container(
-                                  padding: const EdgeInsets.symmetric(
-                                    horizontal: 6,
-                                    vertical: 2,
-                                  ),
-                                  decoration: BoxDecoration(
-                                    color: colorScheme.primaryContainer.withValues(alpha: 0.4),
-                                    borderRadius: BorderRadius.zero,
-                                  ),
-                                  child: Row(
-                                    mainAxisSize: MainAxisSize.min,
-                                    children: [
-                                      Icon(
-                                        Icons.calendar_today_outlined,
-                                        size: 10,
-                                        color: colorScheme.onSurfaceVariant,
-                                      ),
-                                      const SizedBox(width: 3),
-                                      Text(
-                                        '${item.targetDate.toString().substring(0, 10)}',
-                                        style: TextStyle(
-                                          color: colorScheme.primary.withValues(alpha: 0.8),
-                                          fontSize: 10,
-                                          fontWeight: FontWeight.w500,
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                ),
-                                const SizedBox(width: 8),
                                 Text(
                                   '$chars chars · $lines lines',
                                   style: TextStyle(
