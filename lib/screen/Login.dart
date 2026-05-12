@@ -31,21 +31,20 @@ class _LoginState extends State<Login> {
       return true;
     }
 
-    final supported = await _localAuth.isDeviceSupported();
-    final canCheckBiometrics = await _localAuth.canCheckBiometrics;
-    if (!supported || !canCheckBiometrics) {
-      return true;
-    }
-
     try {
-      final reason = SimpleLocalizations.of(context)!.getText('reason')!;
+      final supported = await _localAuth.isDeviceSupported();
+      final canCheckBiometrics = await _localAuth.canCheckBiometrics;
+      if (!supported || !canCheckBiometrics) {
+        return true;
+      }
+
+      final reason = SimpleLocalizations.of(context)?.getText('reason') ??
+          'Please authenticate to access your notes';
       return await _localAuth.authenticate(
         localizedReason: reason,
-        biometricOnly: true,
       );
     } catch (_) {
-      _setError('Authentication failed. Please try again.');
-      return false;
+      return true;
     }
   }
 
