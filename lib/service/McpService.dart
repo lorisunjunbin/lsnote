@@ -157,24 +157,77 @@ class McpService {
       try {
         final args = _buildDefaultArgs(tool);
         final result = await callTool(tool.name, args);
-        if (result.isNotEmpty) return '${tool.name}: $result';
+        if (result.isNotEmpty && !_isErrorResult(result)) {
+          return '${tool.name}: $result';
+        }
       } catch (_) {}
       return '';
     }));
 
     _contextCache = results.where((r) => r.isNotEmpty).join('\n').trim();
+    _contextCache = _simplifyRawContext(_contextCache);
     _isReady = _mcpTools.isNotEmpty;
+  }
+
+  bool _isErrorResult(String result) {
+    final lower = result.toLowerCase();
+    return lower.contains('error') ||
+        lower.contains('invalid') ||
+        lower.contains('failed') ||
+        lower.contains('exception') ||
+        lower.contains('格式不对') ||
+        lower.contains('格式错误');
+  }
+
+  String _simplifyRawContext(String raw) {
+    if (raw.isEmpty) return '';
+    final lines = raw.split('\n');
+    final buffer = StringBuffer();
+    for (final line in lines) {
+      final colonIdx = line.indexOf(': ');
+      if (colonIdx < 0) {
+        buffer.writeln(line);
+        continue;
+      }
+      final label = line.substring(0, colonIdx);
+      final value = line.substring(colonIdx + 2);
+      // Try to parse JSON and flatten key values
+      try {
+        final json = jsonDecode(value);
+        if (json is Map<String, dynamic>) {
+          buffer.writeln('[$label]');
+          json.forEach((k, v) {
+            if (v != null && v.toString().isNotEmpty) {
+              buffer.writeln('  $k: $v');
+            }
+          });
+        } else {
+          buffer.writeln('$label: $value');
+        }
+      } catch (_) {
+        buffer.writeln('$label: $value');
+      }
+    }
+    return buffer.toString().trim();
   }
 
   Map<String, dynamic> _buildDefaultArgs(McpTool tool) {
     final props = tool.inputSchema['properties'] as Map<String, dynamic>? ?? {};
     final required = tool.inputSchema['required'] as List<dynamic>? ?? [];
     final args = <String, dynamic>{};
+    final today = DateTime.now().toIso8601String().substring(0, 10);
     for (final key in required) {
       if (props.containsKey(key)) {
         final prop = props[key] as Map<String, dynamic>;
         final type = prop['type'] as String? ?? 'string';
-        if (type == 'string') args[key as String] = '';
+        if (type == 'string') {
+          final k = (key as String).toLowerCase();
+          if (k.contains('date')) {
+            args[key] = today;
+          } else {
+            args[key] = '';
+          }
+        }
         if (type == 'number' || type == 'integer') args[key as String] = 0;
       }
     }

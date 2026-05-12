@@ -1625,7 +1625,7 @@ class _AiChatState extends State<AiChat> {
                                 children: [
                                   Row(
                                     children: [
-                                      Icon(Icons.wb_sunny_outlined, size: 16, color: colorScheme.primary),
+                                      Icon(_weatherIcon(McpService.instance.contextCache), size: 16, color: colorScheme.primary),
                                       const SizedBox(width: 6),
                                       Text(
                                         sl.getText('aiTodayInfo') ?? 'Today',
@@ -1715,6 +1715,18 @@ class _AiChatState extends State<AiChat> {
         ),
       ),
     );
+  }
+
+  IconData _weatherIcon(String context) {
+    final lower = context.toLowerCase();
+    if (lower.contains('雪') || lower.contains('snow')) return Icons.ac_unit;
+    if (lower.contains('雷') || lower.contains('thunder')) return Icons.flash_on;
+    if (lower.contains('雨') || lower.contains('rain')) return Icons.water_drop_outlined;
+    if (lower.contains('阴') || lower.contains('overcast')) return Icons.cloud;
+    if (lower.contains('多云') || lower.contains('cloudy')) return Icons.cloud_outlined;
+    if (lower.contains('雾') || lower.contains('fog')) return Icons.foggy;
+    if (lower.contains('晴') || lower.contains('sunny') || lower.contains('clear')) return Icons.wb_sunny_outlined;
+    return Icons.wb_sunny_outlined;
   }
 
   Widget _buildSuggestionChip(String label, IconData icon, ColorScheme colorScheme) {

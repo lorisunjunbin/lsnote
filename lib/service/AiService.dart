@@ -674,6 +674,11 @@ class AiService {
     await McpService.instance.fetchContextOnModelReady();
     final raw = McpService.instance.contextCache;
     if (raw.isEmpty || _engine == null) return;
+    // Short enough after pre-processing, use directly
+    if (raw.length < 300) {
+      McpService.instance.setContextCache(raw);
+      return;
+    }
     try {
       final buffer = StringBuffer();
       await completeStream(
@@ -682,10 +687,28 @@ class AiService {
         maxLength: 200,
       ).forEach((token) => buffer.write(token));
       final summary = buffer.toString().trim();
-      if (summary.isNotEmpty) {
+      if (summary.isNotEmpty &&
+          summary.length < raw.length &&
+          !_isRefusalOutput(summary)) {
         McpService.instance.setContextCache(summary);
+      } else {
+        // Summarize failed, truncate raw as fallback
+        McpService.instance.setContextCache(
+            raw.length > 300 ? raw.substring(0, 300) : raw);
       }
-    } catch (_) {}
+    } catch (_) {
+      McpService.instance.setContextCache(
+          raw.length > 300 ? raw.substring(0, 300) : raw);
+    }
+  }
+
+  bool _isRefusalOutput(String text) {
+    final lower = text.toLowerCase();
+    return lower.contains('没有提供') ||
+        lower.contains('no specific') ||
+        lower.contains('not provided') ||
+        lower.contains('无法') ||
+        lower.contains('cannot');
   }
 }
 
