@@ -44,7 +44,9 @@ class _LoginState extends State<Login> {
         localizedReason: reason,
       );
     } catch (_) {
-      return true;
+      final supported = await _localAuth.isDeviceSupported().catchError((_) => false);
+      final canCheck = await _localAuth.canCheckBiometrics.catchError((_) => false);
+      return !supported || !canCheck;
     }
   }
 
@@ -76,31 +78,34 @@ class _LoginState extends State<Login> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      body: Center(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            if (_isAuthenticating) const CircularProgressIndicator(),
-            if (!_isAuthenticating)
-              IconButton(
-                color: Theme.of(context).primaryColorDark,
-                icon: const Icon(Icons.fingerprint),
-                iconSize: 80,
-                onPressed: () => _authLogin(context),
-              ),
-            if (_errorText != null) ...[
-              const SizedBox(height: 12),
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 24),
-                child: Text(
-                  _errorText!,
-                  textAlign: TextAlign.center,
-                  style: TextStyle(color: Theme.of(context).colorScheme.error),
+    return PopScope(
+      canPop: false,
+      child: Scaffold(
+        body: Center(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              if (_isAuthenticating) const CircularProgressIndicator(),
+              if (!_isAuthenticating)
+                IconButton(
+                  color: Theme.of(context).primaryColorDark,
+                  icon: const Icon(Icons.fingerprint),
+                  iconSize: 80,
+                  onPressed: () => _authLogin(context),
                 ),
-              ),
-            ]
-          ],
+              if (_errorText != null) ...[
+                const SizedBox(height: 12),
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 24),
+                  child: Text(
+                    _errorText!,
+                    textAlign: TextAlign.center,
+                    style: TextStyle(color: Theme.of(context).colorScheme.error),
+                  ),
+                ),
+              ]
+            ],
+          ),
         ),
       ),
     );
