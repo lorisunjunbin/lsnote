@@ -1307,7 +1307,7 @@ class _AiChatState extends State<AiChat> {
                             ? null
                             : () async {
                                 setDialogState(() => isMcpFetching = true);
-                                await McpService.instance.fetchContextOnModelReady();
+                                await AiService.instance.fetchAndSummarizeContext();
                                 _conversation?.dispose();
                                 _conversation = null;
                                 _conversationHasTools = false;

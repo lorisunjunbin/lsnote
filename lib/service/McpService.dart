@@ -158,14 +158,13 @@ class McpService {
         final args = _buildDefaultArgs(tool);
         final result = await callTool(tool.name, args);
         if (result.isNotEmpty && !_isErrorResult(result)) {
-          return '${tool.name}: $result';
+          return result;
         }
       } catch (_) {}
       return '';
     }));
 
-    final raw = results.where((r) => r.isNotEmpty).join('\n').trim();
-    _contextCache = _simplifyRawContext(raw);
+    _contextCache = results.where((r) => r.isNotEmpty).join('\n').trim();
     _isReady = _mcpTools.isNotEmpty;
   }
 
@@ -177,38 +176,6 @@ class McpService {
         lower.contains('exception') ||
         lower.contains('格式不对') ||
         lower.contains('格式错误');
-  }
-
-  String _simplifyRawContext(String raw) {
-    if (raw.isEmpty) return '';
-    final lines = raw.split('\n');
-    final buffer = StringBuffer();
-    for (final line in lines) {
-      final colonIdx = line.indexOf(': ');
-      if (colonIdx < 0) {
-        buffer.writeln(line);
-        continue;
-      }
-      final label = line.substring(0, colonIdx);
-      final value = line.substring(colonIdx + 2);
-      // Try to parse JSON and flatten key values
-      try {
-        final json = jsonDecode(value);
-        if (json is Map<String, dynamic>) {
-          buffer.writeln('[$label]');
-          json.forEach((k, v) {
-            if (v != null && v.toString().isNotEmpty) {
-              buffer.writeln('  $k: $v');
-            }
-          });
-        } else {
-          buffer.writeln('$label: $value');
-        }
-      } catch (_) {
-        buffer.writeln('$label: $value');
-      }
-    }
-    return buffer.toString().trim();
   }
 
   Map<String, dynamic> _buildDefaultArgs(McpTool tool) {

@@ -24,7 +24,7 @@ Powered by **Gemma 4 E4B-it** via LiteRT-LM, all AI features run locally on-devi
 - **Multi-server support** — configure multiple MCP servers with individual enable/disable toggles
 - Each server has name, URL, fallback URL (auto-retry on primary failure), and Bearer token
 - Tool-call bubbles display `[ServerName] toolName` for easy identification
-- Auto-fetches context tools (weather/holiday/time) on model load
+- Auto-fetches context tools (weather/holiday/time) on model load, **AI-summarized** into a concise daily info card
 - Model can invoke external tools during conversation and display results inline
 - Tool-calling loop with up to 5 rounds of tool use per message
 
