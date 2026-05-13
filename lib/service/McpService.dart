@@ -164,8 +164,8 @@ class McpService {
       return '';
     }));
 
-    _contextCache = results.where((r) => r.isNotEmpty).join('\n').trim();
-    _contextCache = _simplifyRawContext(_contextCache);
+    final raw = results.where((r) => r.isNotEmpty).join('\n').trim();
+    _contextCache = _simplifyRawContext(raw);
     _isReady = _mcpTools.isNotEmpty;
   }
 

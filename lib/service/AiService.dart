@@ -673,33 +673,43 @@ class AiService {
   void _fetchAndSummarizeContext() async {
     await McpService.instance.fetchContextOnModelReady();
     final raw = McpService.instance.contextCache;
-    if (raw.isEmpty || _engine == null) return;
-    // Short enough after pre-processing, use directly
-    if (raw.length < 300) {
-      McpService.instance.setContextCache(raw);
+    if (raw.isEmpty || _engine == null) {
+      McpService.instance.setContextCache('');
+      return;
+    }
+    // Short enough after pre-processing, use directly but strip tool names
+    final cleaned = _stripToolNames(raw);
+    if (cleaned.length < 300) {
+      McpService.instance.setContextCache(cleaned);
       return;
     }
     try {
       final buffer = StringBuffer();
       await completeStream(
         AiPrompts.summarizeContext(),
-        raw,
+        cleaned,
         maxLength: 200,
       ).forEach((token) => buffer.write(token));
       final summary = buffer.toString().trim();
       if (summary.isNotEmpty &&
-          summary.length < raw.length &&
+          summary.length < cleaned.length &&
           !_isRefusalOutput(summary)) {
         McpService.instance.setContextCache(summary);
       } else {
-        // Summarize failed, truncate raw as fallback
         McpService.instance.setContextCache(
-            raw.length > 300 ? raw.substring(0, 300) : raw);
+            cleaned.length > 300 ? cleaned.substring(0, 300) : cleaned);
       }
     } catch (_) {
       McpService.instance.setContextCache(
-          raw.length > 300 ? raw.substring(0, 300) : raw);
+          cleaned.length > 300 ? cleaned.substring(0, 300) : cleaned);
     }
+  }
+
+  String _stripToolNames(String text) {
+    return text.replaceAllMapped(
+      RegExp(r'^\[?[\w_-]+\]?\s*[:：]\s*', multiLine: true),
+      (m) => '',
+    ).trim();
   }
 
   bool _isRefusalOutput(String text) {

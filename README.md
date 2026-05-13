@@ -57,6 +57,8 @@ Powered by **Gemma 4 E4B-it** via LiteRT-LM, all AI features run locally on-devi
 ![image](./images/lsnote-screenshot/Screenshot_20260309_153900.png)
 
  - Drag & Drop to sort notes
+ - Swipe right to pin/unpin notes (pinned notes stay at top)
+ - Swipe left to delete (requires marking done first)
 
 ![image](./images/lsnote-screenshot/Screenshot_20260309_153927.png)
  

@@ -503,6 +503,7 @@ class _BackupState extends State<Backup> {
       final content = (map['c'] ?? '').toString();
       final sequence = _asNum(map['s']) ?? (index * NoteAccessSqlite.sequenceStep);
       final isDone = _asBool(map['d']);
+      final isPinned = _asBool(map['ip']);
       final tdMillis = _asInt(map['td']);
       final targetDate = DateTime.fromMillisecondsSinceEpoch(
         tdMillis ?? DateTime.now().millisecondsSinceEpoch,
@@ -514,6 +515,7 @@ class _BackupState extends State<Backup> {
         content: content,
         sequence: sequence,
         isDone: isDone,
+        isPinned: isPinned,
         targetDate: targetDate,
       ));
     }

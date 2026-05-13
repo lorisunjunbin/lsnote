@@ -30,6 +30,7 @@ class NoteAccessSqlite {
             content TEXT,
             sequence REAL,
             isDone BIT NOT NULL,
+            isPinned BIT DEFAULT 0,
             targetDate INT)
      ''',
     '''
@@ -78,10 +79,15 @@ class NoteAccessSqlite {
         _dbPath = '$dbFolder/$_dbFileName';
         ////print(_dbPath);
 
-        _database = await openDatabase(_dbPath!, version: 1,
+        _database = await openDatabase(_dbPath!, version: 2,
             onCreate: (Database db, int version) async {
           for (String sql in _initSQLs) {
             await db.execute(sql);
+          }
+        }, onUpgrade: (Database db, int oldVersion, int newVersion) async {
+          if (oldVersion < 2) {
+            await db.execute(
+                'ALTER TABLE notes ADD COLUMN isPinned BIT DEFAULT 0');
           }
         });
       });
@@ -141,7 +147,7 @@ class NoteAccessSqlite {
         paramValues.add(value);
       }
     });
-    sql += ' order by sequence, id ';
+    sql += ' order by isPinned DESC, sequence, id ';
 
     return _database!.rawQuery(sql, paramValues);
   }
@@ -167,14 +173,15 @@ class NoteAccessSqlite {
     await _database!.transaction((Transaction txn) async {
       await txn.rawInsert('''
           INSERT INTO notes
-            (title, content, sequence, isDone, targetDate)
+            (title, content, sequence, isDone, isPinned, targetDate)
           VALUES
-            (?, ?, ?, ?, ?)''',
+            (?, ?, ?, ?, ?, ?)''',
           [
             note.title,
             note.content,
             note.sequence,
             note.isDone ? 1 : 0,
+            note.isPinned ? 1 : 0,
             note.targetDate?.millisecondsSinceEpoch,
           ]);
     });
@@ -187,6 +194,16 @@ class NoteAccessSqlite {
       SET isDone = ?
       WHERE id = ?''',
       [if (note.isDone) 1 else 0, note.id],
+    );
+  }
+
+  Future<void> toggleNotePinned(Note note) async {
+    await _database!.rawUpdate(
+      '''
+      UPDATE notes
+      SET isPinned = ?
+      WHERE id = ?''',
+      [note.isPinned ? 1 : 0, note.id],
     );
   }
 
@@ -215,13 +232,14 @@ class NoteAccessSqlite {
     await _database!.rawUpdate(
       '''
       UPDATE notes
-      SET content = ?, title = ?, sequence = ?, isDone = ?, targetDate = ?
+      SET content = ?, title = ?, sequence = ?, isDone = ?, isPinned = ?, targetDate = ?
       WHERE id = ?''',
       [
         note.content,
         note.title,
         note.sequence,
-        note.isDone,
+        note.isDone ? 1 : 0,
+        note.isPinned ? 1 : 0,
         note.targetDate?.millisecondsSinceEpoch,
         note.id
       ],

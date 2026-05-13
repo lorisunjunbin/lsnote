@@ -47,6 +47,7 @@ class _NoteLandingState extends State<NoteLanding>
   final Map<int, List<String>> _redoStacks = {};
   final Map<int, bool> _isOrganizing = {};
   bool _welcomeRequested = false;
+  bool _isFiltering = false;
   final List<StreamSubscription> _aiSubs = [];
 
   final AudioRecorder _recorder = AudioRecorder();
@@ -533,6 +534,7 @@ class _NoteLandingState extends State<NoteLanding>
             child: TextField(
               onChanged: (v) async {
                 if (v.isNotEmpty) {
+                  _isFiltering = true;
                   _items = await db.getNotes({
                     ' where ( title like ? ': '%$v%',
                     ' or content like ?) ': '%$v%',
@@ -542,6 +544,7 @@ class _NoteLandingState extends State<NoteLanding>
                   });
                   setState(() {});
                 } else {
+                  _isFiltering = false;
                   _updateUI(context);
                 }
               },
@@ -558,6 +561,7 @@ class _NoteLandingState extends State<NoteLanding>
                     ? IconButton(
                         icon: Icon(Icons.clear, color: colorScheme.onSurfaceVariant, size: 18),
                         onPressed: () {
+                          _isFiltering = false;
                           _updateUI(context);
                         },
                       )
@@ -605,6 +609,13 @@ class _NoteLandingState extends State<NoteLanding>
   }
 
   Widget _buildEmptyState(ColorScheme colorScheme, SimpleLocalizations? sl) {
+    final icon = _isFiltering ? Icons.search_off : Icons.note_alt_outlined;
+    final title = _isFiltering
+        ? (sl?.getText('emptySearch') ?? 'No matching notes')
+        : (sl?.getText('emptyNotes') ?? 'No notes yet');
+    final hint = _isFiltering
+        ? (sl?.getText('emptySearchHint') ?? 'Try a different search term')
+        : (sl?.getText('emptyNotesHint') ?? 'Tap + to create your first note');
     return Center(
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
@@ -617,14 +628,14 @@ class _NoteLandingState extends State<NoteLanding>
               shape: BoxShape.circle,
             ),
             child: Icon(
-              Icons.note_alt_outlined,
+              icon,
               size: 60,
               color: colorScheme.onSurfaceVariant,
             ),
           ),
           const SizedBox(height: 24),
           Text(
-            sl?.getText('emptyNotes') ?? 'No notes yet',
+            title,
             style: TextStyle(
               fontSize: 20,
               fontWeight: FontWeight.w600,
@@ -633,7 +644,7 @@ class _NoteLandingState extends State<NoteLanding>
           ),
           const SizedBox(height: 8),
           Text(
-            sl?.getText('emptyNotesHint') ?? 'Tap + to create your first note',
+            hint,
             style: TextStyle(
               fontSize: 14,
               color: colorScheme.onSurfaceVariant,
@@ -1281,6 +1292,52 @@ class _NoteLandingState extends State<NoteLanding>
     setState(() {});
   }
 
+  Widget _buildSwipeBackground({
+    required Alignment alignment,
+    required Color color,
+    required IconData icon,
+  }) {
+    return Container(
+      color: color.withValues(alpha: 0.15),
+      alignment: alignment,
+      padding: const EdgeInsets.symmetric(horizontal: 24),
+      child: Icon(icon, color: color, size: 28),
+    );
+  }
+
+  Future<bool> _confirmSwipeDelete(Note item, SimpleLocalizations sl) async {
+    final result = await showDialog<bool>(
+      context: context,
+      builder: (dialogCtx) {
+        return AlertDialog(
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(20),
+          ),
+          title: Text(sl.getText('confirm')!),
+          content: SingleChildScrollView(
+            child: ListBody(
+              children: [
+                Text(sl.getText('confirm2delete')!),
+                Text('${item.title!}'),
+              ],
+            ),
+          ),
+          actions: <Widget>[
+            TextButton(
+              child: Text(sl.getText('cancelLabel') ?? 'Cancel'),
+              onPressed: () => Navigator.of(dialogCtx).pop(false),
+            ),
+            TextButton(
+              child: Text(sl.getText('confirmYes')!),
+              onPressed: () => Navigator.of(dialogCtx).pop(true),
+            ),
+          ],
+        );
+      },
+    );
+    return result ?? false;
+  }
+
   List<Widget> _buildItemList(ThemeData theme) {
     final sl = SimpleLocalizations.of(context)!;
     final colorScheme = theme.colorScheme;
@@ -1361,6 +1418,12 @@ class _NoteLandingState extends State<NoteLanding>
                               onTap: () => _toggleCardExpansion(item.id!),
                               child: Row(
                                 children: [
+                                  if (item.isPinned && !isExpanded)
+                                    Icon(
+                                      Icons.push_pin,
+                                      size: 14,
+                                      color: colorScheme.primary,
+                                    ),
                                   Icon(
                                     isExpanded
                                         ? Icons.expand_more
@@ -1614,7 +1677,49 @@ class _NoteLandingState extends State<NoteLanding>
         );
       }
 
-      return KeyedSubtree(key: Key('${item.id}'), child: card);
+      return Dismissible(
+        key: Key('${item.id}'),
+        direction: isExpanded
+            ? DismissDirection.none
+            : DismissDirection.horizontal,
+        background: _buildSwipeBackground(
+          alignment: Alignment.centerLeft,
+          color: Colors.amber,
+          icon: item.isPinned ? Icons.push_pin_outlined : Icons.push_pin,
+        ),
+        secondaryBackground: _buildSwipeBackground(
+          alignment: Alignment.centerRight,
+          color: Colors.red,
+          icon: Icons.delete_outline,
+        ),
+        confirmDismiss: (direction) async {
+          if (direction == DismissDirection.endToStart) {
+            if (!item.isDone) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(
+                  content: Text(sl.getText('markDoneBeforeDelete') ?? 'Mark as done before deleting'),
+                  duration: const Duration(seconds: 2),
+                  behavior: SnackBarBehavior.floating,
+                ),
+              );
+              return false;
+            }
+            return await _confirmSwipeDelete(item, sl);
+          } else {
+            setState(() => item.isPinned = !item.isPinned);
+            db.toggleNotePinned(item);
+            await _updateUI(context);
+            return false;
+          }
+        },
+        onDismissed: (direction) {
+          if (direction == DismissDirection.endToStart) {
+            db.deleteNoteItem(item);
+            _updateUI(context);
+          }
+        },
+        child: card,
+      );
     }).toList();
 
     return _listTiles;

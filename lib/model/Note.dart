@@ -6,6 +6,7 @@ class Note {
 
   // SQLite doesn't supprot boolean. Use INTEGER/BIT (0/1 values).
   bool isDone = false;
+  bool isPinned = false;
 
   // SQLite doesn't supprot DateTime. Store them as INTEGER (millisSinceEpoch).
   final DateTime? targetDate;
@@ -16,6 +17,7 @@ class Note {
       this.content,
       this.sequence,
       this.isDone = false,
+      this.isPinned = false,
       this.targetDate});
 
   Note.fromJsonMap(Map<String, dynamic> map)
@@ -24,6 +26,7 @@ class Note {
         content = map['content'] as String,
         sequence = map['sequence'] as num,
         isDone = map['isDone'] == 1,
+        isPinned = map['isPinned'] == 1,
         targetDate =
             DateTime.fromMillisecondsSinceEpoch(map['targetDate'] as int);
 
@@ -33,6 +36,7 @@ class Note {
         'content': content,
         'sequence': sequence,
         'isDone': isDone ? 1 : 0,
+        'isPinned': isPinned ? 1 : 0,
         'targetDate': targetDate?.millisecondsSinceEpoch,
       };
 
@@ -42,6 +46,7 @@ class Note {
         content = map['c'] as String,
         sequence = map['s'] as num,
         isDone = map['d'] == 1,
+        isPinned = map['ip'] == 1,
         targetDate = DateTime.fromMillisecondsSinceEpoch(map['td'] as int);
 
   Map<String, dynamic> toJsonMapThin() => {
@@ -50,6 +55,7 @@ class Note {
         'c': content,
         's': sequence,
         'd': isDone ? 1 : 0,
+        'ip': isPinned ? 1 : 0,
         'td': targetDate?.millisecondsSinceEpoch,
       };
 }
