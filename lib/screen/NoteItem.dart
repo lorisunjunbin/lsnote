@@ -24,7 +24,7 @@ class NoteItem extends StatefulWidget {
 
 class _NoteItemState extends State<NoteItem>
     with SingleTickerProviderStateMixin {
-  static DateTime _datetime = DateTime.now().add(const Duration(days: 1));
+  static DateTime? _datetime = DateTime.now().add(const Duration(days: 1));
   late final TextEditingController _titleCtl;
   late final TextEditingController _contentCtl;
   late final AnimationController _animationController;
@@ -209,21 +209,31 @@ class _NoteItemState extends State<NoteItem>
                     ),
                     const SizedBox(height: 4),
                     Text(
-                      _formatDate(_datetime),
+                      _datetime != null
+                          ? _formatDate(_datetime!)
+                          : (sl.getText('targetDateNone') ?? 'Not set'),
                       style: TextStyle(
                         fontSize: 16,
                         fontWeight: FontWeight.w600,
-                        color: colorScheme.onSurface,
+                        color: _datetime != null
+                            ? colorScheme.onSurface
+                            : colorScheme.onSurfaceVariant,
                       ),
                     ),
                   ],
                 ),
               ),
-              Icon(
-                Icons.chevron_right,
-                color: colorScheme.onSurfaceVariant,
-                size: 20,
-              ),
+              if (_datetime != null)
+                IconButton(
+                  icon: Icon(Icons.close, size: 18, color: colorScheme.onSurfaceVariant),
+                  onPressed: () => setState(() => _datetime = null),
+                )
+              else
+                Icon(
+                  Icons.chevron_right,
+                  color: colorScheme.onSurfaceVariant,
+                  size: 20,
+                ),
             ],
           ),
         ),
@@ -234,7 +244,7 @@ class _NoteItemState extends State<NoteItem>
   void _showDatePicker(SimpleLocalizations sl, ColorScheme colorScheme) {
     showDatePicker(
       context: context,
-      initialDate: _datetime,
+      initialDate: _datetime ?? DateTime.now().add(const Duration(days: 1)),
       firstDate: DateTime.parse("2020-01-01"),
       lastDate: DateTime.parse("2030-12-31"),
       cancelText: sl.getText('cancelLabel'),
@@ -850,11 +860,11 @@ class _NoteItemState extends State<NoteItem>
       ),
     );
 
-    int total = await db.getNoteCount();
+    final sequence = -DateTime.now().millisecondsSinceEpoch ~/ 1000;
     await db.addNote(Note(
       title: _titleCtl.value.text,
       content: _contentCtl.value.text,
-      sequence: total * -NoteAccessSqlite.sequenceStep,
+      sequence: sequence,
       isDone: false,
       targetDate: _datetime,
     ));

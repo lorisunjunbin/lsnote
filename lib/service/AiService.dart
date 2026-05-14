@@ -564,7 +564,7 @@ class AiService {
 
     return await _engine!.createConversation(
       LiteLmConversationConfig(
-        systemInstruction: systemInstruction ?? 'You are a helpful assistant.',
+        systemInstruction: systemInstruction ?? AiPrompts.chatDefault,
         samplerConfig: const LiteLmSamplerConfig(
           temperature: 0.7,
           topK: 40,
@@ -686,7 +686,7 @@ class AiService {
       await completeStream(
         AiPrompts.summarizeContext(),
         raw,
-        maxLength: 300,
+        maxLength: 500,
       ).forEach((token) => buffer.write(token));
       final summary = buffer.toString().trim();
       if (summary.isNotEmpty && summary.length < raw.length) {

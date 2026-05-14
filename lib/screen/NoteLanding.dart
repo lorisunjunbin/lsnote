@@ -1483,18 +1483,21 @@ class _NoteLandingState extends State<NoteLanding>
                             ),
                           ),
                           if (isExpanded) const SizedBox(width: 5),
-                          Padding(
-                            padding: const EdgeInsets.only(top: 4, right: 4),
-                            child: Text(
-                              item.targetDate!.year == DateTime.now().year
-                                  ? '${item.targetDate.toString().substring(5, 10)}'
-                                  : '${item.targetDate.toString().substring(0, 10)}',
-                              style: TextStyle(
-                                color: colorScheme.onSurfaceVariant.withValues(alpha: 0.6),
-                                fontSize: 10,
+                          if (item.targetDate != null)
+                            Padding(
+                              padding: const EdgeInsets.only(top: 4, right: 4),
+                              child: Text(
+                                item.targetDate!.year == DateTime.now().year
+                                    ? '${item.targetDate.toString().substring(5, 10)}'
+                                    : '${item.targetDate.toString().substring(0, 10)}',
+                                style: TextStyle(
+                                  color: item.targetDate!.isAfter(DateTime.now())
+                                      ? const Color(0xFF66BB6A)
+                                      : colorScheme.onSurfaceVariant.withValues(alpha: 0.4),
+                                  fontSize: 10,
+                                ),
                               ),
                             ),
-                          ),
                           Padding(
                             padding: const EdgeInsets.only(top: 2),
                             child: ReorderableDragStartListener(

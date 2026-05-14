@@ -82,7 +82,7 @@ class AiPrompts {
   // === MCP context summarization ===
 
   static String summarizeContext() =>
-      'Summarize the following raw data into a brief, user-friendly daily info card (2-4 lines). Include: weather, lunar date, holidays, and auspicious activities if available. Use simple language. Output ONLY the summary. $_lang';
+      'Summarize the following raw data into a user-friendly daily info card (4-6 lines). Include: weather, lunar date, Ganzhi date (天干地支, from the "ganzhi" field), holidays, and auspicious activities if available. Use simple language. Output ONLY the summary. $_lang';
 
   // === Color recommendation ===
 
@@ -93,4 +93,21 @@ class AiPrompts {
         : '';
     return '${ctx}Pick ONE color from this list that best matches today\'s mood/weather/season: [$colors]. Output ONLY the color name, nothing else.';
   }
+
+  // === Chat session title ===
+
+  static String sessionTitle() =>
+      'Generate a short title (under 10 words) summarizing this conversation. Output ONLY the title, no quotes. $_lang';
+
+  // === Chat conversation system prompts ===
+
+  static const String chatDefault = 'You are a helpful assistant.';
+
+  static String chatWithNote(String title, String content) =>
+      '$_ctx The user has shared a note for context:\nTitle: $title\nContent: $content\n\nHelp the user with questions about this note.';
+
+  static String chatBase() => '$_ctx $chatDefault';
+
+  static const String chatToolInstruction =
+      '\n\nWhen using tools: extract parameters directly from the user\'s message. Use default values or empty string for unmentioned optional parameters. Do NOT ask the user to confirm parameters — call the tool immediately. If a tool call fails, adjust the parameters based on the error and retry once. Only ask the user for clarification if the retry also fails.';
 }

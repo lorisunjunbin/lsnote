@@ -27,8 +27,9 @@ class Note {
         sequence = map['sequence'] as num,
         isDone = map['isDone'] == 1,
         isPinned = map['isPinned'] == 1,
-        targetDate =
-            DateTime.fromMillisecondsSinceEpoch(map['targetDate'] as int);
+        targetDate = map['targetDate'] != null
+            ? DateTime.fromMillisecondsSinceEpoch(map['targetDate'] as int)
+            : null;
 
   Map<String, dynamic> toJsonMap() => {
         'id': id,
@@ -47,7 +48,9 @@ class Note {
         sequence = map['s'] as num,
         isDone = map['d'] == 1,
         isPinned = map['ip'] == 1,
-        targetDate = DateTime.fromMillisecondsSinceEpoch(map['td'] as int);
+        targetDate = map['td'] != null
+            ? DateTime.fromMillisecondsSinceEpoch(map['td'] as int)
+            : null;
 
   Map<String, dynamic> toJsonMapThin() => {
         'i': id,

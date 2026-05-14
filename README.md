@@ -56,6 +56,9 @@ Powered by **Gemma 4 E4B-it** via LiteRT-LM, all AI features run locally on-devi
 
 ![image](./images/lsnote-screenshot/Screenshot_20260309_152826.png)
 
+- Optional **target date** — defaults to tomorrow, can be cleared
+- Target date displayed in green (future) or gray (past) on landing page
+
 ### Landing Page has content
 ![image](./images/lsnote-screenshot/Screenshot_20260309_153900.png)
 
@@ -94,6 +97,9 @@ Powered by **Gemma 4 E4B-it** via LiteRT-LM, all AI features run locally on-devi
 
 ![image](./images/lsnote-screenshot/Screenshot_20260309_154846.png)
 
+- Custom digit pad (no system keyboard needed)
+- **Easy Mode** — toggle color hints: green = correct position, orange = correct digit wrong position, gray = miss
+- Animated gradient title with per-character coloring
 - GUESS result explanation:
     - 1A2B means 1 digit is correct and in the right position, 2 digits are correct but in the wrong position.
     - For example, if the secret number is "1234" and the guess is "1243", the result would be "2A2B" because '1' and '2' are correct and in the right position (2A), while '3' and '4' are correct but in the wrong position (2B).

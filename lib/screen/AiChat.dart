@@ -44,6 +44,9 @@ class _AiChatState extends State<AiChat> {
 
   int? _currentSessionId;
   bool _isReadOnly = false;
+  bool _sessionTitled = false;
+  String? _historyContextCache;
+  int _historyContextMsgCount = -1;
 
   final AudioRecorder _recorder = AudioRecorder();
   bool _isRecording = false;
@@ -57,15 +60,43 @@ class _AiChatState extends State<AiChat> {
   void initState() {
     super.initState();
     _checkModelReady();
-    _createNewSession();
     McpService.instance.onContextReady = () {
       if (mounted) setState(() {});
     };
   }
 
-  Future<void> _createNewSession() async {
+  Future<void> _ensureSession() async {
+    if (_currentSessionId != null) return;
     final id = await db.createChatSession('');
-    if (mounted) setState(() => _currentSessionId = id);
+    _currentSessionId = id;
+  }
+
+  Future<void> _ensureConversation() async {
+    final mcpTools = McpService.instance.tools;
+    if (_conversation != null && !_conversationHasTools && mcpTools.isNotEmpty) {
+      _conversation?.dispose();
+      _conversation = null;
+      _conversationHasTools = false;
+    }
+    if (_conversation == null) {
+      final mcpContext = McpService.instance.contextCache;
+      final baseInstruction = _attachedNote != null
+          ? AiPrompts.chatWithNote(_attachedNote!.title!, _attachedNote!.content!)
+          : AiPrompts.chatBase();
+      final toolInstruction = mcpTools.isNotEmpty
+          ? AiPrompts.chatToolInstruction
+          : '';
+      final contextPart = mcpContext.isNotEmpty
+          ? '\n\nContext information:\n$mcpContext'
+          : '';
+      final historyPart = _buildHistoryContext();
+      final systemInstruction = '$baseInstruction$toolInstruction$contextPart$historyPart';
+      _conversation = await AiService.instance.createChatConversation(
+        systemInstruction: systemInstruction,
+        tools: mcpTools,
+      );
+      _conversationHasTools = mcpTools.isNotEmpty;
+    }
   }
 
   void _checkModelReady() async {
@@ -88,27 +119,56 @@ class _AiChatState extends State<AiChat> {
     _audioPlayer.dispose();
     _inputCtl.dispose();
     _scrollCtl.dispose();
-    _deleteEmptySession();
+    _finalizeSession();
     super.dispose();
   }
 
-  void _deleteEmptySession() {
-    if (_currentSessionId != null && _messages.isEmpty) {
+  void _finalizeSession() {
+    if (_currentSessionId == null) return;
+    if (_messages.isEmpty) {
       db.deleteChatSession(_currentSessionId!);
+      return;
     }
+    if (_isReadOnly) return;
+    _generateSessionTitle(_currentSessionId!, List.from(_messages));
   }
 
-  Future<void> _persistMessage(ChatMessage msg) async {
-    if (_currentSessionId == null || _isReadOnly) return;
-    await db.addChatMessage(_currentSessionId!, msg);
-    if (msg.role == 'user' && _messages.where((m) => m.role == 'user').length == 1) {
-      final title = msg.content.length > 20
-          ? msg.content.substring(0, 20)
-          : msg.content;
-      if (title.isNotEmpty) {
-        await db.updateChatSessionTitle(_currentSessionId!, title);
+  Future<void> _generateSessionTitle(int sessionId, List<ChatMessage> messages) async {
+    if (!AiService.instance.isReady) return;
+    final textMessages = messages
+        .where((m) => m.messageType == MessageType.text && m.content.isNotEmpty)
+        .take(6)
+        .map((m) => '${m.role == 'user' ? 'User' : 'Assistant'}: ${m.content.length > 100 ? m.content.substring(0, 100) : m.content}')
+        .join('\n');
+    if (textMessages.isEmpty) return;
+    try {
+      final buffer = StringBuffer();
+      await AiService.instance.completeStream(
+        AiPrompts.sessionTitle(),
+        textMessages,
+        maxLength: 50,
+      ).forEach((token) => buffer.write(token));
+      final title = buffer.toString().trim();
+      if (title.isNotEmpty && title.length < 50) {
+        await db.updateChatSessionTitle(sessionId, title);
       }
-    }
+    } catch (_) {}
+  }
+
+  void _persistMessage(ChatMessage msg) {
+    if (_isReadOnly) return;
+    _ensureSession().then((_) {
+      db.addChatMessage(_currentSessionId!, msg);
+      if (msg.role == 'user' && !_sessionTitled) {
+        _sessionTitled = true;
+        final title = msg.content.length > 20
+            ? msg.content.substring(0, 20)
+            : msg.content;
+        if (title.isNotEmpty) {
+          db.updateChatSessionTitle(_currentSessionId!, title);
+        }
+      }
+    });
   }
 
   Future<void> _toggleRecording() async {
@@ -234,31 +294,7 @@ class _AiChatState extends State<AiChat> {
     if (!AiService.instance.isReady) return;
 
     try {
-      final mcpTools = McpService.instance.tools;
-      if (_conversation != null && !_conversationHasTools && mcpTools.isNotEmpty) {
-        _conversation?.dispose();
-        _conversation = null;
-        _conversationHasTools = false;
-      }
-      if (_conversation == null) {
-        final mcpContext = McpService.instance.contextCache;
-        final baseInstruction = _attachedNote != null
-            ? '${AiService.instance.contextInfo} The user has shared a note for context:\nTitle: ${_attachedNote!.title}\nContent: ${_attachedNote!.content}\n\nHelp the user with questions about this note.'
-            : '${AiService.instance.contextInfo} You are a helpful assistant.';
-        final toolInstruction = mcpTools.isNotEmpty
-            ? '\n\nWhen using tools: extract parameters directly from the user\'s message. Use default values or empty string for unmentioned optional parameters. Do NOT ask the user to confirm parameters — call the tool immediately. If a tool call fails, adjust the parameters based on the error and retry once. Only ask the user for clarification if the retry also fails.'
-            : '';
-        final contextPart = mcpContext.isNotEmpty
-            ? '\n\nContext information:\n$mcpContext'
-            : '';
-        final historyPart = _buildHistoryContext();
-        final systemInstruction = '$baseInstruction$toolInstruction$contextPart$historyPart';
-        _conversation = await AiService.instance.createChatConversation(
-          systemInstruction: systemInstruction,
-          tools: mcpTools,
-        );
-        _conversationHasTools = mcpTools.isNotEmpty;
-      }
+      await _ensureConversation();
     } catch (e) {
       return;
     }
@@ -281,31 +317,7 @@ class _AiChatState extends State<AiChat> {
     if (!AiService.instance.isReady) return;
 
     try {
-      final mcpTools = McpService.instance.tools;
-      if (_conversation != null && !_conversationHasTools && mcpTools.isNotEmpty) {
-        _conversation?.dispose();
-        _conversation = null;
-        _conversationHasTools = false;
-      }
-      if (_conversation == null) {
-        final mcpContext = McpService.instance.contextCache;
-        final baseInstruction = _attachedNote != null
-            ? '${AiService.instance.contextInfo} The user has shared a note for context:\nTitle: ${_attachedNote!.title}\nContent: ${_attachedNote!.content}\n\nHelp the user with questions about this note.'
-            : '${AiService.instance.contextInfo} You are a helpful assistant.';
-        final toolInstruction = mcpTools.isNotEmpty
-            ? '\n\nWhen using tools: extract parameters directly from the user\'s message. Use default values or empty string for unmentioned optional parameters. Do NOT ask the user to confirm parameters — call the tool immediately. If a tool call fails, adjust the parameters based on the error and retry once. Only ask the user for clarification if the retry also fails.'
-            : '';
-        final contextPart = mcpContext.isNotEmpty
-            ? '\n\nContext information:\n$mcpContext'
-            : '';
-        final historyPart = _buildHistoryContext();
-        final systemInstruction = '$baseInstruction$toolInstruction$contextPart$historyPart';
-        _conversation = await AiService.instance.createChatConversation(
-          systemInstruction: systemInstruction,
-          tools: mcpTools,
-        );
-        _conversationHasTools = mcpTools.isNotEmpty;
-      }
+      await _ensureConversation();
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -593,13 +605,14 @@ class _AiChatState extends State<AiChat> {
     _conversation?.dispose();
     _conversation = null;
     _conversationHasTools = false;
-    _deleteEmptySession();
+    _finalizeSession();
     setState(() {
       _messages.clear();
       _attachedNote = null;
       _isReadOnly = false;
+      _currentSessionId = null;
+      _sessionTitled = false;
     });
-    _createNewSession();
   }
 
   Future<void> _showHistorySheet() async {
@@ -649,9 +662,10 @@ class _AiChatState extends State<AiChat> {
                       ),
                     ),
                     Expanded(
-                      child: ListView.builder(
+                      child: ListView.separated(
                         controller: scrollCtl,
                         itemCount: sessions.length,
+                        separatorBuilder: (ctx, i) => const Divider(height: 1),
                         itemBuilder: (ctx, i) {
                           final session = sessions[i];
                           final isCurrent = session.id == _currentSessionId;
@@ -748,24 +762,38 @@ class _AiChatState extends State<AiChat> {
     _conversation?.dispose();
     _conversation = null;
     _conversationHasTools = false;
-    setState(() => _isReadOnly = false);
+    final sl = SimpleLocalizations.of(context);
+    final hint = sl?.getText('chatResumed') ?? 'Conversation resumed';
+    setState(() {
+      _isReadOnly = false;
+      _messages.add(ChatMessage(
+        role: 'system',
+        content: hint,
+      ));
+    });
+    _scrollToBottom();
   }
 
   String _buildHistoryContext() {
     if (_messages.isEmpty) return '';
+    if (_historyContextCache != null && _historyContextMsgCount == _messages.length) {
+      return _historyContextCache!;
+    }
     final recent = _messages.length > 10
         ? _messages.sublist(_messages.length - 10)
         : _messages;
     final buf = StringBuffer('\n\nPrevious conversation:\n');
     for (final m in recent) {
-      if (m.messageType != MessageType.text) continue;
+      if (m.messageType != MessageType.text || m.role == 'system') continue;
       final role = m.role == 'user' ? 'User' : 'Assistant';
       final text = m.content.length > 200
           ? m.content.substring(0, 200)
           : m.content;
       buf.writeln('$role: $text');
     }
-    return buf.toString();
+    _historyContextCache = buf.toString();
+    _historyContextMsgCount = _messages.length;
+    return _historyContextCache!;
   }
 
   Future<void> _showNotePickerDialog() async {
@@ -782,8 +810,9 @@ class _AiChatState extends State<AiChat> {
         content: SizedBox(
           width: double.maxFinite,
           height: 300,
-          child: ListView.builder(
+          child: ListView.separated(
             itemCount: notes.length,
+            separatorBuilder: (ctx, i) => const Divider(height: 1),
             itemBuilder: (ctx, i) => ListTile(
               title: Text(notes[i].title ?? ''),
               subtitle: Text(
@@ -1962,6 +1991,17 @@ class _AiChatState extends State<AiChat> {
   }
 
   Widget _buildMessageBubble(ChatMessage msg, ColorScheme colorScheme) {
+    if (msg.role == 'system') {
+      return Padding(
+        padding: const EdgeInsets.symmetric(vertical: 8),
+        child: Center(
+          child: Text(
+            msg.content,
+            style: TextStyle(fontSize: 11, color: colorScheme.onSurfaceVariant),
+          ),
+        ),
+      );
+    }
     final isUser = msg.role == 'user';
     final isThinking = !isUser &&
         msg.content.isEmpty &&

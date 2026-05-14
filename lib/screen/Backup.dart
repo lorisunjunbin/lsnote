@@ -505,9 +505,9 @@ class _BackupState extends State<Backup> {
       final isDone = _asBool(map['d']);
       final isPinned = _asBool(map['ip']);
       final tdMillis = _asInt(map['td']);
-      final targetDate = DateTime.fromMillisecondsSinceEpoch(
-        tdMillis ?? DateTime.now().millisecondsSinceEpoch,
-      );
+      final targetDate = tdMillis != null
+          ? DateTime.fromMillisecondsSinceEpoch(tdMillis)
+          : null;
 
       notes.add(Note(
         id: id,
