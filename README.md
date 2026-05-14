@@ -13,6 +13,9 @@ Powered by **Gemma 4 E4B-it** via LiteRT-LM, all AI features run locally on-devi
 
 ### AI Chat
 - Multi-turn conversation with streaming responses
+- **Chat history persistence** — conversations auto-saved to SQLite sessions
+- **Session management** — browse history, tap to review (read-only), swipe to delete
+- **Continue conversation** — resume any past session with history injected as context
 - Polished chat UI with refined bubble styling and typing indicators
 - Markdown rendering (headings, code blocks, inline code, lists)
 - Attach a note as context for Q&A

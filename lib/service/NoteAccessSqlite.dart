@@ -6,6 +6,8 @@ import 'package:sqflite/sqflite.dart';
 
 import '../model/Note.dart';
 import '../model/Config.dart';
+import '../model/ChatMessage.dart';
+import '../model/ChatSession.dart';
 
 // https://pub.dev/packages/sqflite
 // https://www.sqlite.org/datatype3.html
@@ -63,6 +65,27 @@ class NoteAccessSqlite {
             (name, value)
           VALUES
             ('aiBackend','gpu');
+    ''',
+    '''
+      CREATE TABLE IF NOT EXISTS chat_sessions (
+            id INTEGER PRIMARY KEY,
+            title TEXT,
+            createdAt INT,
+            updatedAt INT,
+            messageCount INT DEFAULT 0)
+    ''',
+    '''
+      CREATE TABLE IF NOT EXISTS chat_messages (
+            id INTEGER PRIMARY KEY,
+            sessionId INT,
+            role TEXT,
+            content TEXT,
+            imagePath TEXT,
+            audioPath TEXT,
+            thinkingContent TEXT,
+            timestamp INT,
+            messageType TEXT,
+            FOREIGN KEY(sessionId) REFERENCES chat_sessions(id))
     '''
   ];
 
@@ -79,7 +102,7 @@ class NoteAccessSqlite {
         _dbPath = '$dbFolder/$_dbFileName';
         ////print(_dbPath);
 
-        _database = await openDatabase(_dbPath!, version: 2,
+        _database = await openDatabase(_dbPath!, version: 3,
             onCreate: (Database db, int version) async {
           for (String sql in _initSQLs) {
             await db.execute(sql);
@@ -88,6 +111,29 @@ class NoteAccessSqlite {
           if (oldVersion < 2) {
             await db.execute(
                 'ALTER TABLE notes ADD COLUMN isPinned BIT DEFAULT 0');
+          }
+          if (oldVersion < 3) {
+            await db.execute('''
+              CREATE TABLE IF NOT EXISTS chat_sessions (
+                id INTEGER PRIMARY KEY,
+                title TEXT,
+                createdAt INT,
+                updatedAt INT,
+                messageCount INT DEFAULT 0)
+            ''');
+            await db.execute('''
+              CREATE TABLE IF NOT EXISTS chat_messages (
+                id INTEGER PRIMARY KEY,
+                sessionId INT,
+                role TEXT,
+                content TEXT,
+                imagePath TEXT,
+                audioPath TEXT,
+                thinkingContent TEXT,
+                timestamp INT,
+                messageType TEXT,
+                FOREIGN KEY(sessionId) REFERENCES chat_sessions(id))
+            ''');
           }
         });
       });
@@ -294,6 +340,54 @@ class NoteAccessSqlite {
       }
       await batch.commit(noResult: true);
     });
+  }
+
+  // ── Chat Session CRUD ──
+
+  Future<int> createChatSession(String title) async {
+    final now = DateTime.now().millisecondsSinceEpoch;
+    return await _database!.rawInsert(
+      'INSERT INTO chat_sessions (title, createdAt, updatedAt, messageCount) VALUES (?, ?, ?, 0)',
+      [title, now, now],
+    );
+  }
+
+  Future<List<ChatSession>> getChatSessions() async {
+    final jsons = await _database!.rawQuery(
+        'SELECT * FROM chat_sessions ORDER BY updatedAt DESC');
+    return jsons.map((j) => ChatSession.fromJsonMap(j)).toList();
+  }
+
+  Future<void> deleteChatSession(int sessionId) async {
+    await _database!.rawDelete(
+        'DELETE FROM chat_messages WHERE sessionId = ?', [sessionId]);
+    await _database!.rawDelete(
+        'DELETE FROM chat_sessions WHERE id = ?', [sessionId]);
+  }
+
+  Future<void> updateChatSessionTitle(int id, String title) async {
+    await _database!.rawUpdate(
+      'UPDATE chat_sessions SET title = ? WHERE id = ?',
+      [title, id],
+    );
+  }
+
+  // ── Chat Message CRUD ──
+
+  Future<void> addChatMessage(int sessionId, ChatMessage msg) async {
+    final map = msg.toDbMap(sessionId);
+    await _database!.insert('chat_messages', map);
+    await _database!.rawUpdate(
+      'UPDATE chat_sessions SET updatedAt = ?, messageCount = messageCount + 1 WHERE id = ?',
+      [DateTime.now().millisecondsSinceEpoch, sessionId],
+    );
+  }
+
+  Future<List<ChatMessage>> getChatMessages(int sessionId) async {
+    final jsons = await _database!.rawQuery(
+        'SELECT * FROM chat_messages WHERE sessionId = ? ORDER BY timestamp ASC',
+        [sessionId]);
+    return jsons.map((j) => ChatMessage.fromDbMap(j)).toList();
   }
 
   NoteAccessSqlite._internal();

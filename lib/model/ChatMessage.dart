@@ -21,6 +21,33 @@ class ChatMessage {
     this.isExpanded = false,
   }) : timestamp = timestamp ?? DateTime.now();
 
+  ChatMessage.fromDbMap(Map<String, dynamic> map)
+      : role = map['role'] as String,
+        content = map['content'] as String? ?? '',
+        imagePath = map['imagePath'] as String?,
+        audioPath = map['audioPath'] as String?,
+        thinkingContent = map['thinkingContent'] as String?,
+        timestamp = DateTime.fromMillisecondsSinceEpoch(map['timestamp'] as int),
+        messageType = _parseMessageType(map['messageType'] as String?),
+        isExpanded = false;
+
+  Map<String, dynamic> toDbMap(int sessionId) => {
+        'sessionId': sessionId,
+        'role': role,
+        'content': content,
+        'imagePath': imagePath,
+        'audioPath': audioPath,
+        'thinkingContent': thinkingContent,
+        'timestamp': timestamp.millisecondsSinceEpoch,
+        'messageType': messageType.name,
+      };
+
+  static MessageType _parseMessageType(String? value) {
+    if (value == 'toolCall') return MessageType.toolCall;
+    if (value == 'toolResult') return MessageType.toolResult;
+    return MessageType.text;
+  }
+
   ChatMessage copyWith({bool? isExpanded}) {
     return ChatMessage(
       role: role,

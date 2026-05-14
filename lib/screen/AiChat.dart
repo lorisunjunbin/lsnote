@@ -13,6 +13,7 @@ import 'package:wakelock_plus/wakelock_plus.dart';
 
 import '../i18n/SimpleLocalizations.dart';
 import '../model/ChatMessage.dart';
+import '../model/ChatSession.dart';
 import '../model/Note.dart';
 import '../service/AiPrompts.dart';
 import '../service/AiService.dart';
@@ -41,6 +42,9 @@ class _AiChatState extends State<AiChat> {
   bool _conversationHasTools = false;
   StreamSubscription? _streamSub;
 
+  int? _currentSessionId;
+  bool _isReadOnly = false;
+
   final AudioRecorder _recorder = AudioRecorder();
   bool _isRecording = false;
   int _recordingDuration = 0;
@@ -53,9 +57,15 @@ class _AiChatState extends State<AiChat> {
   void initState() {
     super.initState();
     _checkModelReady();
+    _createNewSession();
     McpService.instance.onContextReady = () {
       if (mounted) setState(() {});
     };
+  }
+
+  Future<void> _createNewSession() async {
+    final id = await db.createChatSession('');
+    if (mounted) setState(() => _currentSessionId = id);
   }
 
   void _checkModelReady() async {
@@ -78,7 +88,27 @@ class _AiChatState extends State<AiChat> {
     _audioPlayer.dispose();
     _inputCtl.dispose();
     _scrollCtl.dispose();
+    _deleteEmptySession();
     super.dispose();
+  }
+
+  void _deleteEmptySession() {
+    if (_currentSessionId != null && _messages.isEmpty) {
+      db.deleteChatSession(_currentSessionId!);
+    }
+  }
+
+  Future<void> _persistMessage(ChatMessage msg) async {
+    if (_currentSessionId == null || _isReadOnly) return;
+    await db.addChatMessage(_currentSessionId!, msg);
+    if (msg.role == 'user' && _messages.where((m) => m.role == 'user').length == 1) {
+      final title = msg.content.length > 20
+          ? msg.content.substring(0, 20)
+          : msg.content;
+      if (title.isNotEmpty) {
+        await db.updateChatSessionTitle(_currentSessionId!, title);
+      }
+    }
   }
 
   Future<void> _toggleRecording() async {
@@ -137,7 +167,7 @@ class _AiChatState extends State<AiChat> {
   }
 
   Future<void> _sendAudioMessage(String audioPath) async {
-    if (_isStreaming) return;
+    if (_isStreaming || _isReadOnly) return;
     if (!AiService.instance.isReady) return;
 
     final userMsgIndex = _messages.length;
@@ -167,14 +197,16 @@ class _AiChatState extends State<AiChat> {
       }
 
       if (transcription.isNotEmpty && mounted) {
+        final updatedMsg = ChatMessage(
+          role: 'user',
+          content: transcription,
+          audioPath: audioPath,
+          timestamp: _messages[userMsgIndex].timestamp,
+        );
         setState(() {
-          _messages[userMsgIndex] = ChatMessage(
-            role: 'user',
-            content: transcription,
-            audioPath: audioPath,
-            timestamp: _messages[userMsgIndex].timestamp,
-          );
+          _messages[userMsgIndex] = updatedMsg;
         });
+        _persistMessage(updatedMsg);
       }
 
       setState(() => _isStreaming = false);
@@ -219,7 +251,8 @@ class _AiChatState extends State<AiChat> {
         final contextPart = mcpContext.isNotEmpty
             ? '\n\nContext information:\n$mcpContext'
             : '';
-        final systemInstruction = '$baseInstruction$toolInstruction$contextPart';
+        final historyPart = _buildHistoryContext();
+        final systemInstruction = '$baseInstruction$toolInstruction$contextPart$historyPart';
         _conversation = await AiService.instance.createChatConversation(
           systemInstruction: systemInstruction,
           tools: mcpTools,
@@ -244,7 +277,7 @@ class _AiChatState extends State<AiChat> {
     final imagePath = _pendingImagePath;
 
     if (text.isEmpty && imagePath == null) return;
-    if (_isStreaming) return;
+    if (_isStreaming || _isReadOnly) return;
     if (!AiService.instance.isReady) return;
 
     try {
@@ -265,7 +298,8 @@ class _AiChatState extends State<AiChat> {
         final contextPart = mcpContext.isNotEmpty
             ? '\n\nContext information:\n$mcpContext'
             : '';
-        final systemInstruction = '$baseInstruction$toolInstruction$contextPart';
+        final historyPart = _buildHistoryContext();
+        final systemInstruction = '$baseInstruction$toolInstruction$contextPart$historyPart';
         _conversation = await AiService.instance.createChatConversation(
           systemInstruction: systemInstruction,
           tools: mcpTools,
@@ -282,17 +316,19 @@ class _AiChatState extends State<AiChat> {
     }
 
     final sl = SimpleLocalizations.of(context)!;
+    final userMsg = ChatMessage(
+      role: 'user',
+      content: text.isNotEmpty
+          ? text
+          : (sl.getText('aiImageAnalyze') ?? 'Analyze image'),
+      imagePath: imagePath,
+    );
     setState(() {
-      _messages.add(ChatMessage(
-        role: 'user',
-        content: text.isNotEmpty
-            ? text
-            : (sl.getText('aiImageAnalyze') ?? 'Analyze image'),
-        imagePath: imagePath,
-      ));
+      _messages.add(userMsg);
       _isStreaming = true;
       _pendingImagePath = null;
     });
+    _persistMessage(userMsg);
     _inputCtl.clear();
     _scrollToBottom();
 
@@ -307,13 +343,15 @@ class _AiChatState extends State<AiChat> {
           imagePath,
           userText,
         );
+        final finalMsg = ChatMessage(
+          role: 'assistant',
+          content: response,
+          timestamp: assistantMsg.timestamp,
+        );
         setState(() {
-          _messages[_messages.length - 1] = ChatMessage(
-            role: 'assistant',
-            content: response,
-            timestamp: assistantMsg.timestamp,
-          );
+          _messages[_messages.length - 1] = finalMsg;
         });
+        _persistMessage(finalMsg);
       } catch (e) {
         setState(() {
           _messages[_messages.length - 1] = ChatMessage(
@@ -379,7 +417,10 @@ class _AiChatState extends State<AiChat> {
           if (!completer.isCompleted) completer.complete();
         },
         onDone: () {
-          if (mounted) setState(() => _isStreaming = false);
+          if (mounted) {
+            setState(() => _isStreaming = false);
+            _persistMessage(_messages.last);
+          }
           if (!completer.isCompleted) completer.complete();
         },
         cancelOnError: true,
@@ -412,16 +453,18 @@ class _AiChatState extends State<AiChat> {
       if (response.toolCalls.isEmpty) {
         final parsed = _parseThinking(response.text);
         if (mounted) {
+          final finalMsg = ChatMessage(
+            role: 'assistant',
+            content: parsed['content']!,
+            thinkingContent:
+                parsed['thinking']!.isEmpty ? null : parsed['thinking'],
+            timestamp: assistantMsg.timestamp,
+          );
           setState(() {
-            _messages[_messages.length - 1] = ChatMessage(
-              role: 'assistant',
-              content: parsed['content']!,
-              thinkingContent:
-                  parsed['thinking']!.isEmpty ? null : parsed['thinking'],
-              timestamp: assistantMsg.timestamp,
-            );
+            _messages[_messages.length - 1] = finalMsg;
             _isStreaming = false;
           });
+          _persistMessage(finalMsg);
         }
         return;
       }
@@ -471,16 +514,18 @@ class _AiChatState extends State<AiChat> {
           if (continuation.toolCalls.isEmpty && continuation.text.isNotEmpty) {
             final parsed = _parseThinking(continuation.text);
             if (mounted) {
+              final finalMsg = ChatMessage(
+                role: 'assistant',
+                content: parsed['content']!,
+                thinkingContent:
+                    parsed['thinking']!.isEmpty ? null : parsed['thinking'],
+                timestamp: assistantMsg.timestamp,
+              );
               setState(() {
-                _messages[_messages.length - 1] = ChatMessage(
-                  role: 'assistant',
-                  content: parsed['content']!,
-                  thinkingContent:
-                      parsed['thinking']!.isEmpty ? null : parsed['thinking'],
-                  timestamp: assistantMsg.timestamp,
-                );
+                _messages[_messages.length - 1] = finalMsg;
                 _isStreaming = false;
               });
+              _persistMessage(finalMsg);
             }
             return;
           }
@@ -548,10 +593,179 @@ class _AiChatState extends State<AiChat> {
     _conversation?.dispose();
     _conversation = null;
     _conversationHasTools = false;
+    _deleteEmptySession();
     setState(() {
       _messages.clear();
       _attachedNote = null;
+      _isReadOnly = false;
     });
+    _createNewSession();
+  }
+
+  Future<void> _showHistorySheet() async {
+    final sessions = await db.getChatSessions();
+    if (!mounted) return;
+
+    final sl = SimpleLocalizations.of(context)!;
+    final colorScheme = Theme.of(context).colorScheme;
+
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(12)),
+      ),
+      builder: (ctx) {
+        return StatefulBuilder(
+          builder: (ctx, setSheetState) {
+            if (sessions.isEmpty) {
+              return SizedBox(
+                height: 200,
+                child: Center(
+                  child: Text(
+                    sl.getText('emptyHistory') ?? 'No chat history',
+                    style: TextStyle(color: colorScheme.onSurfaceVariant),
+                  ),
+                ),
+              );
+            }
+            return DraggableScrollableSheet(
+              initialChildSize: 0.5,
+              minChildSize: 0.3,
+              maxChildSize: 0.8,
+              expand: false,
+              builder: (ctx, scrollCtl) {
+                return Column(
+                  children: [
+                    Padding(
+                      padding: const EdgeInsets.symmetric(vertical: 12),
+                      child: Text(
+                        sl.getText('chatHistory') ?? 'Chat History',
+                        style: TextStyle(
+                          fontSize: 14,
+                          fontWeight: FontWeight.w600,
+                          color: colorScheme.onSurface,
+                        ),
+                      ),
+                    ),
+                    Expanded(
+                      child: ListView.builder(
+                        controller: scrollCtl,
+                        itemCount: sessions.length,
+                        itemBuilder: (ctx, i) {
+                          final session = sessions[i];
+                          final isCurrent = session.id == _currentSessionId;
+                          return Dismissible(
+                            key: ValueKey(session.id),
+                            direction: DismissDirection.endToStart,
+                            background: Container(
+                              alignment: Alignment.centerRight,
+                              padding: const EdgeInsets.only(right: 20),
+                              color: colorScheme.error,
+                              child: Icon(Icons.delete,
+                                  color: colorScheme.onError),
+                            ),
+                            onDismissed: (_) {
+                              db.deleteChatSession(session.id!);
+                              setSheetState(() => sessions.removeAt(i));
+                              if (isCurrent) {
+                                _clearChat();
+                              }
+                            },
+                            child: ListTile(
+                              title: Text(
+                                session.title.isNotEmpty
+                                    ? session.title
+                                    : '...',
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: TextStyle(
+                                  fontSize: 13,
+                                  fontWeight: isCurrent
+                                      ? FontWeight.w600
+                                      : FontWeight.normal,
+                                ),
+                              ),
+                              subtitle: Text(
+                                '${_formatSessionTime(session.updatedAt)} · ${session.messageCount}',
+                                style: TextStyle(
+                                  fontSize: 11,
+                                  color: colorScheme.onSurfaceVariant,
+                                ),
+                              ),
+                              trailing: isCurrent
+                                  ? Icon(Icons.chat_bubble,
+                                      size: 16, color: colorScheme.primary)
+                                  : null,
+                              onTap: isCurrent
+                                  ? () => Navigator.pop(ctx)
+                                  : () {
+                                      Navigator.pop(ctx);
+                                      _loadSession(session);
+                                    },
+                            ),
+                          );
+                        },
+                      ),
+                    ),
+                  ],
+                );
+              },
+            );
+          },
+        );
+      },
+    );
+  }
+
+  String _formatSessionTime(DateTime dt) {
+    final now = DateTime.now();
+    if (dt.year == now.year && dt.month == now.month && dt.day == now.day) {
+      return '${dt.hour.toString().padLeft(2, '0')}:${dt.minute.toString().padLeft(2, '0')}';
+    }
+    return '${dt.month}/${dt.day} ${dt.hour.toString().padLeft(2, '0')}:${dt.minute.toString().padLeft(2, '0')}';
+  }
+
+  Future<void> _loadSession(ChatSession session) async {
+    final messages = await db.getChatMessages(session.id!);
+    if (!mounted) return;
+
+    _conversation?.dispose();
+    _conversation = null;
+    _conversationHasTools = false;
+
+    setState(() {
+      _currentSessionId = session.id;
+      _messages.clear();
+      _messages.addAll(messages);
+      _attachedNote = null;
+      _isReadOnly = true;
+    });
+    _scrollToBottom();
+  }
+
+  void _continueSession() {
+    _conversation?.dispose();
+    _conversation = null;
+    _conversationHasTools = false;
+    setState(() => _isReadOnly = false);
+  }
+
+  String _buildHistoryContext() {
+    if (_messages.isEmpty) return '';
+    final recent = _messages.length > 10
+        ? _messages.sublist(_messages.length - 10)
+        : _messages;
+    final buf = StringBuffer('\n\nPrevious conversation:\n');
+    for (final m in recent) {
+      if (m.messageType != MessageType.text) continue;
+      final role = m.role == 'user' ? 'User' : 'Assistant';
+      final text = m.content.length > 200
+          ? m.content.substring(0, 200)
+          : m.content;
+      buf.writeln('$role: $text');
+    }
+    return buf.toString();
   }
 
   Future<void> _showNotePickerDialog() async {
@@ -1482,6 +1696,11 @@ class _AiChatState extends State<AiChat> {
           title: Text(sl.getText('aiChat') ?? 'AI Chat'),
           actions: [
             IconButton(
+              icon: const Icon(Icons.history),
+              tooltip: sl.getText('chatHistory') ?? 'Chat History',
+              onPressed: _showHistorySheet,
+            ),
+            IconButton(
               icon: Icon(
                 Icons.attach_file,
                 color: _attachedNote != null
@@ -1710,7 +1929,10 @@ class _AiChatState extends State<AiChat> {
                         },
                     ),
             ),
-            _buildInputBar(colorScheme, sl),
+            if (_isReadOnly)
+              _buildContinueBar(colorScheme, sl)
+            else
+              _buildInputBar(colorScheme, sl),
           ],
         ),
       ),
@@ -2090,6 +2312,23 @@ class _AiChatState extends State<AiChat> {
               ),
             ),
         ],
+      ),
+    );
+  }
+
+  Widget _buildContinueBar(ColorScheme colorScheme, SimpleLocalizations sl) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+      decoration: BoxDecoration(
+        border: Border(top: BorderSide(color: colorScheme.outlineVariant, width: 0.5)),
+      ),
+      child: SizedBox(
+        width: double.infinity,
+        child: FilledButton.icon(
+          onPressed: _continueSession,
+          icon: const Icon(Icons.chat_outlined, size: 18),
+          label: Text(sl.getText('continueChat') ?? 'Continue'),
+        ),
       ),
     );
   }
