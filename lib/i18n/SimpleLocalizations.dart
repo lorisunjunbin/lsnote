@@ -176,6 +176,10 @@ class SimpleLocalizations {
       'aiModelInference': 'Model & Inference',
       'aiConversation': 'Conversation',
       'aiSystemPrompt': 'System Prompt',
+      'aiCopyMessage': 'Copy',
+      'aiSaveAsNote': 'Save as Note',
+      'aiCopied': 'Copied',
+      'aiSavedAsNote': 'Saved as note',
     },
     'zh': {
       'title': 'LS记事本',
@@ -347,6 +351,10 @@ class SimpleLocalizations {
       'aiModelInference': '模型与推理',
       'aiConversation': '对话',
       'aiSystemPrompt': '系统提示词',
+      'aiCopyMessage': '复制',
+      'aiSaveAsNote': '存为笔记',
+      'aiCopied': '已复制',
+      'aiSavedAsNote': '已保存为笔记',
     }
   };
 

@@ -21,6 +21,9 @@ Powered by **Gemma 4 E4B-it** via LiteRT-LM, all AI features run locally on-devi
 - Attach a note as context for Q&A
 - Send images for AI analysis (vision)
 - Send voice messages for AI transcription (audio)
+- **Long-press AI avatar** — copy full reply or save as note directly
+- **Stream throttling** — batched UI updates (~80ms) for smoother scrolling during output
+- **Smart WakeLock** — screen stays on during inference, releases immediately when done
 - **MCP Tool Calling** — connect to external MCP servers for real-time context (weather, calendar, earthquake info, etc.)
 
 ### MCP Integration

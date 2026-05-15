@@ -3,6 +3,7 @@ import 'dart:io';
 
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_litert_lm/flutter_litert_lm.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:just_audio/just_audio.dart';
@@ -55,6 +56,8 @@ class _AiChatState extends State<AiChat> {
   final AudioPlayer _audioPlayer = AudioPlayer();
   String? _playingAudioPath;
   final Map<String, bool> _expandedAudioTranscripts = {};
+  Timer? _streamThrottleTimer;
+  bool _streamDirty = false;
 
   @override
   void initState() {
@@ -112,6 +115,7 @@ class _AiChatState extends State<AiChat> {
   @override
   void dispose() {
     McpService.instance.onContextReady = null;
+    _streamThrottleTimer?.cancel();
     _streamSub?.cancel();
     _conversation?.dispose();
     _recordingTimer?.cancel();
@@ -119,6 +123,7 @@ class _AiChatState extends State<AiChat> {
     _audioPlayer.dispose();
     _inputCtl.dispose();
     _scrollCtl.dispose();
+    if (_isStreaming) WakelockPlus.disable();
     _finalizeSession();
     super.dispose();
   }
@@ -275,6 +280,7 @@ class _AiChatState extends State<AiChat> {
         _sendTranscribedText(transcription);
       }
     } catch (e) {
+      WakelockPlus.disable();
       final assistantMsg = ChatMessage(role: 'assistant', content: '');
       setState(() => _messages.add(assistantMsg));
       setState(() {
@@ -300,6 +306,7 @@ class _AiChatState extends State<AiChat> {
     }
 
     setState(() => _isStreaming = true);
+    WakelockPlus.enable();
     final assistantMsg = ChatMessage(role: 'assistant', content: '');
     setState(() => _messages.add(assistantMsg));
     _scrollToBottom();
@@ -340,6 +347,7 @@ class _AiChatState extends State<AiChat> {
       _isStreaming = true;
       _pendingImagePath = null;
     });
+    WakelockPlus.enable();
     _persistMessage(userMsg);
     _inputCtl.clear();
     _scrollToBottom();
@@ -373,6 +381,7 @@ class _AiChatState extends State<AiChat> {
           );
         });
       } finally {
+        WakelockPlus.disable();
         setState(() => _isStreaming = false);
       }
     } else {
@@ -403,19 +412,28 @@ class _AiChatState extends State<AiChat> {
         (token) {
           if (!mounted) return;
           buffer.write(token.text);
-          final parsed = _parseThinking(buffer.toString());
-          setState(() {
-            _messages[_messages.length - 1] = ChatMessage(
-              role: 'assistant',
-              content: parsed['content']!,
-              thinkingContent:
-                  parsed['thinking']!.isEmpty ? null : parsed['thinking'],
-              timestamp: assistantMsg.timestamp,
-            );
-          });
-          _scrollToBottom();
+          _streamDirty = true;
+          if (_streamThrottleTimer == null || !_streamThrottleTimer!.isActive) {
+            _streamThrottleTimer = Timer(const Duration(milliseconds: 80), () {
+              if (!mounted || !_streamDirty) return;
+              _streamDirty = false;
+              final parsed = _parseThinking(buffer.toString());
+              setState(() {
+                _messages[_messages.length - 1] = ChatMessage(
+                  role: 'assistant',
+                  content: parsed['content']!,
+                  thinkingContent:
+                      parsed['thinking']!.isEmpty ? null : parsed['thinking'],
+                  timestamp: assistantMsg.timestamp,
+                );
+              });
+              _scrollToBottom();
+            });
+          }
         },
         onError: (e) {
+          _streamThrottleTimer?.cancel();
+          WakelockPlus.disable();
           if (mounted) {
             setState(() {
               _messages[_messages.length - 1] = ChatMessage(
@@ -429,9 +447,23 @@ class _AiChatState extends State<AiChat> {
           if (!completer.isCompleted) completer.complete();
         },
         onDone: () {
+          _streamThrottleTimer?.cancel();
+          WakelockPlus.disable();
           if (mounted) {
-            setState(() => _isStreaming = false);
-            _persistMessage(_messages.last);
+            final parsed = _parseThinking(buffer.toString());
+            final finalMsg = ChatMessage(
+              role: 'assistant',
+              content: parsed['content']!,
+              thinkingContent:
+                  parsed['thinking']!.isEmpty ? null : parsed['thinking'],
+              timestamp: assistantMsg.timestamp,
+            );
+            setState(() {
+              _messages[_messages.length - 1] = finalMsg;
+              _isStreaming = false;
+            });
+            _persistMessage(finalMsg);
+            _scrollToBottom();
           }
           if (!completer.isCompleted) completer.complete();
         },
@@ -449,6 +481,7 @@ class _AiChatState extends State<AiChat> {
       try {
         response = await _conversation!.sendMessage(currentText);
       } catch (e) {
+        WakelockPlus.disable();
         if (mounted) {
           setState(() {
             _messages[_messages.length - 1] = ChatMessage(
@@ -464,6 +497,7 @@ class _AiChatState extends State<AiChat> {
 
       if (response.toolCalls.isEmpty) {
         final parsed = _parseThinking(response.text);
+        WakelockPlus.disable();
         if (mounted) {
           final finalMsg = ChatMessage(
             role: 'assistant',
@@ -548,7 +582,10 @@ class _AiChatState extends State<AiChat> {
       }
     }
 
-    if (mounted) setState(() => _isStreaming = false);
+    if (mounted) {
+      WakelockPlus.disable();
+      setState(() => _isStreaming = false);
+    }
   }
 
   Map<String, String> _parseThinking(String raw) {
@@ -2017,11 +2054,16 @@ class _AiChatState extends State<AiChat> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           if (!isUser) ...[
-            CircleAvatar(
-              radius: 12,
-              backgroundColor: colorScheme.primaryContainer,
-              child: Icon(Icons.auto_awesome,
-                  size: 12, color: colorScheme.onPrimaryContainer),
+            GestureDetector(
+              onLongPress: msg.content.isNotEmpty
+                  ? () => _showMessageActions(msg, sl)
+                  : null,
+              child: CircleAvatar(
+                radius: 12,
+                backgroundColor: colorScheme.primaryContainer,
+                child: Icon(Icons.auto_awesome,
+                    size: 12, color: colorScheme.onPrimaryContainer),
+              ),
             ),
             const SizedBox(width: 8),
           ],
@@ -2178,6 +2220,65 @@ class _AiChatState extends State<AiChat> {
         ],
       ),
     );
+  }
+
+  void _showMessageActions(ChatMessage msg, SimpleLocalizations sl) {
+    final colorScheme = Theme.of(context).colorScheme;
+    showModalBottomSheet(
+      context: context,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(12)),
+      ),
+      builder: (ctx) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ListTile(
+              leading: const Icon(Icons.copy),
+              title: Text(sl.getText('aiCopyMessage') ?? 'Copy'),
+              onTap: () {
+                Navigator.pop(ctx);
+                Clipboard.setData(ClipboardData(text: msg.content));
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(
+                    content: Text(sl.getText('aiCopied') ?? 'Copied'),
+                    duration: const Duration(seconds: 1),
+                  ),
+                );
+              },
+            ),
+            ListTile(
+              leading: Icon(Icons.note_add, color: colorScheme.primary),
+              title: Text(sl.getText('aiSaveAsNote') ?? 'Save as Note'),
+              onTap: () {
+                Navigator.pop(ctx);
+                _saveMessageAsNote(msg, sl);
+              },
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Future<void> _saveMessageAsNote(ChatMessage msg, SimpleLocalizations sl) async {
+    final title = msg.content.length > 30
+        ? msg.content.substring(0, 30)
+        : msg.content;
+    final note = Note(
+      title: title.replaceAll('\n', ' '),
+      content: msg.content,
+      sequence: 0,
+    );
+    await db.addNote(note);
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(sl.getText('aiSavedAsNote') ?? 'Saved as note'),
+          duration: const Duration(seconds: 2),
+        ),
+      );
+    }
   }
 
   Widget _buildToolBubble(ChatMessage msg, ColorScheme colorScheme) {

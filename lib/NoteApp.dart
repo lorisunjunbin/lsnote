@@ -18,9 +18,13 @@ import 'screen/Backup.dart';
 import 'screen/AiChat.dart';
 
 class AppTheme {
-  // Keep only 16 colors in picker/theme index mapping; exclude brown/blueGrey.
-  static final List<Color> themeColorPalette =
-      Colors.primaries.take(16).toList(growable: false);
+  static final List<Color> themeColorPalette = [
+    ...Colors.primaries.take(16),
+    const Color(0xFF6B8FA3), // Mist Blue
+    const Color(0xFF7ECEC0), // Mint Green
+    const Color(0xFFD4A5A5), // Smoky Pink
+    const Color(0xFF708090), // Slate Gray
+  ];
 
   static ThemeData getLightTheme(Color primaryColor) {
     final colorScheme = ColorScheme.fromSeed(

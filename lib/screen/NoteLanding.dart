@@ -475,12 +475,19 @@ class _NoteLandingState extends State<NoteLanding>
               ),
               body: isEmpty
                   ? _buildEmptyState(colorScheme, sl)
-                  : ReorderableListView(
-                        onReorder: _onReorder,
-                        buildDefaultDragHandles: false,
-                        proxyDecorator: _proxyDecorator,
-                        children: _listTiles,
-                      ),
+                  : Column(
+                      children: [
+                        _buildStatsBar(colorScheme, sl),
+                        Expanded(
+                          child: ReorderableListView(
+                            onReorder: _onReorder,
+                            buildDefaultDragHandles: false,
+                            proxyDecorator: _proxyDecorator,
+                            children: _listTiles,
+                          ),
+                        ),
+                      ],
+                    ),
               floatingActionButtonLocation:
                   FloatingActionButtonLocation.endFloat,
               floatingActionButton: Column(
@@ -601,6 +608,52 @@ class _NoteLandingState extends State<NoteLanding>
                   });
                 },
               ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildStatsBar(ColorScheme colorScheme, SimpleLocalizations? sl) {
+    final total = _items.length;
+    final doneCount = _items.where((n) => n.isDone).length;
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    final tomorrow = today.add(const Duration(days: 1));
+    final dueToday = _items.where((n) =>
+        !n.isDone &&
+        n.targetDate != null &&
+        n.targetDate!.isAfter(today) &&
+        n.targetDate!.isBefore(tomorrow)).length;
+    final overdue = _items.where((n) =>
+        !n.isDone &&
+        n.targetDate != null &&
+        n.targetDate!.isBefore(today)).length;
+
+    final isZh = sl?.locale.languageCode == 'zh';
+    final parts = <String>[];
+    parts.add(isZh == true ? '共 $total 条' : '$total notes');
+    if (doneCount > 0) {
+      parts.add(isZh == true ? '完成 $doneCount' : '$doneCount done');
+    }
+    if (dueToday > 0) {
+      parts.add(isZh == true ? '今日到期 $dueToday' : '$dueToday due today');
+    }
+    if (overdue > 0) {
+      parts.add(isZh == true ? '已过期 $overdue' : '$overdue overdue');
+    }
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+      color: colorScheme.surfaceContainerLow,
+      child: Row(
+        children: [
+          Text(
+            parts.join(' · '),
+            style: TextStyle(
+              fontSize: 11,
+              color: colorScheme.onSurfaceVariant.withValues(alpha: 0.7),
             ),
           ),
         ],
@@ -856,8 +909,20 @@ class _NoteLandingState extends State<NoteLanding>
     }
   }
 
+  static const List<String> _colorNamesZh = [
+    '红', '粉', '紫', '深紫', '靛蓝', '蓝', '浅蓝', '青',
+    '青绿', '绿', '浅绿', '黄绿', '黄', '琥珀', '橙', '深橙',
+    '雾霾蓝', '薄荷绿', '烟粉', '石板灰',
+  ];
+  static const List<String> _colorNamesEn = [
+    'Red', 'Pink', 'Purple', 'Deep Purple', 'Indigo', 'Blue', 'Light Blue', 'Cyan',
+    'Teal', 'Green', 'Light Green', 'Lime', 'Yellow', 'Amber', 'Orange', 'Deep Orange',
+    'Mist Blue', 'Mint', 'Smoky Pink', 'Slate',
+  ];
+
   void _showColorPickerDialog(BuildContext context, SimpleLocalizations sl,
       ColorScheme colorScheme) {
+    final isZh = sl.locale.languageCode == 'zh';
     showDialog<void>(
         context: context,
         builder: (dialogContext) {
@@ -897,45 +962,51 @@ class _NoteLandingState extends State<NoteLanding>
                         final isSelected = index == _currentColorIndex;
                         final luminance = color.computeLuminance();
                         final checkColor = luminance > 0.5 ? Colors.black87 : Colors.white;
-                        return InkWell(
-                          onTap: () {
-                            final themeNotifier = Provider.of<ThemeChangeNotifier>(dialogContext, listen: false);
-                            themeNotifier.setTheme(AppTheme.getLightTheme(color));
-                            db.setConfig(Config.primarySwatch, index.toString());
-                            setDialogState(() {
-                              _currentColorIndex = index;
-                            });
-                            setState(() {});
-                            _showAiColorCompliment(color);
-                          },
-                          borderRadius: BorderRadius.circular(16),
-                          child: AnimatedContainer(
-                            width: 48,
-                            height: 48,
-                            duration: const Duration(milliseconds: 200),
-                            decoration: BoxDecoration(
-                              color: color,
-                              shape: BoxShape.circle,
-                              border: Border.all(
-                                color: isSelected
-                                    ? currentScheme.primary
-                                    : color.withValues(alpha: 0.3),
-                                width: isSelected ? 3 : 1,
+                        final colorName = isZh ? _colorNamesZh[index] : _colorNamesEn[index];
+                        return Tooltip(
+                          message: colorName,
+                          preferBelow: false,
+                          child: InkWell(
+                            onTap: () {
+                              HapticFeedback.lightImpact();
+                              final themeNotifier = Provider.of<ThemeChangeNotifier>(dialogContext, listen: false);
+                              themeNotifier.setTheme(AppTheme.getLightTheme(color));
+                              db.setConfig(Config.primarySwatch, index.toString());
+                              setDialogState(() {
+                                _currentColorIndex = index;
+                              });
+                              setState(() {});
+                              _showAiColorCompliment(color);
+                            },
+                            borderRadius: BorderRadius.circular(16),
+                            child: AnimatedContainer(
+                              width: 48,
+                              height: 48,
+                              duration: const Duration(milliseconds: 200),
+                              decoration: BoxDecoration(
+                                color: color,
+                                shape: BoxShape.circle,
+                                border: Border.all(
+                                  color: isSelected
+                                      ? currentScheme.primary
+                                      : color.withValues(alpha: 0.3),
+                                  width: isSelected ? 3 : 1,
+                                ),
+                                boxShadow: isSelected
+                                    ? [
+                                        BoxShadow(
+                                          color: color.withValues(alpha: 0.4),
+                                          blurRadius: 8,
+                                          spreadRadius: 1,
+                                        )
+                                      ]
+                                    : null,
                               ),
-                              boxShadow: isSelected
-                                  ? [
-                                      BoxShadow(
-                                        color: color.withValues(alpha: 0.4),
-                                        blurRadius: 8,
-                                        spreadRadius: 1,
-                                      )
-                                    ]
+                              child: isSelected
+                                  ? Icon(Icons.check_rounded,
+                                      color: checkColor, size: 24)
                                   : null,
                             ),
-                            child: isSelected
-                                ? Icon(Icons.check_rounded,
-                                    color: checkColor, size: 24)
-                                : null,
                           ),
                         );
                       }),
@@ -994,6 +1065,10 @@ class _NoteLandingState extends State<NoteLanding>
       Colors.amber: 'Amber/琥珀色',
       Colors.orange: 'Orange/橙色',
       Colors.deepOrange: 'Deep Orange/深橙色',
+      const Color(0xFF6B8FA3): 'Mist Blue/雾霾蓝',
+      const Color(0xFF7ECEC0): 'Mint/薄荷绿',
+      const Color(0xFFD4A5A5): 'Smoky Pink/烟粉',
+      const Color(0xFF708090): 'Slate/石板灰',
     };
     final colorName = colorNames[color] ?? color.toString();
 
@@ -1035,6 +1110,7 @@ class _NoteLandingState extends State<NoteLanding>
       'red', 'pink', 'purple', 'deepPurple', 'indigo', 'blue',
       'lightBlue', 'cyan', 'teal', 'green', 'lightGreen', 'lime',
       'yellow', 'amber', 'orange', 'deepOrange',
+      'mistBlue', 'mint', 'smokyPink', 'slate',
     ];
 
     final buffer = StringBuffer();
