@@ -44,6 +44,14 @@ Powered by **Gemma 4 E4B-it** via LiteRT-LM, all AI features run locally on-devi
 - GPU backend with automatic CPU fallback
 - Device RAM detection with model recommendations
 - Custom model URL support
+- **Auto AI Theme** — toggle in color picker; on model load, AI picks a theme color based on weather/season/mood
+
+### Performance & Battery
+- **Stream throttling** — batched UI updates (~80ms) for smooth streaming output
+- **Smart WakeLock** — screen stays on only during active inference
+- **Lazy list rendering** — `ReorderableListView.builder` for efficient note list scrolling
+- **Listener lifecycle** — no duplicate listeners, all stream subscriptions tracked and cancelled on dispose
+- **Temp file cleanup** — voice recordings deleted after transcription; note editor recordings cleaned on exit
 
 ## Look & Feel
 

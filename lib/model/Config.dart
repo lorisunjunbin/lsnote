@@ -10,6 +10,7 @@ class Config {
   static final String mcpAuthHeader = "mcpAuthHeader";
   static final String mcpServers = "mcpServers";
   static final String sequenceNormalized = "sequenceNormalized";
+  static final String autoAiColor = "autoAiColor";
 
   final int? id;
   final String? name;

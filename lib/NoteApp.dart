@@ -287,6 +287,7 @@ class NoteApp extends StatelessWidget {
       await db.ensureConfig(Config.mcpEnabled, '0');
       await db.ensureConfig(Config.mcpServerUrl, '');
       await db.ensureConfig(Config.mcpAuthHeader, '');
+      await db.ensureConfig(Config.autoAiColor, '0');
       await AiService.instance.loadConfig();
       await McpService.instance.init();
       // One-time migration: normalize sequence to integer steps

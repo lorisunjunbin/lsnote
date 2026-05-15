@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -47,6 +48,24 @@ class _NoteLandingState extends State<NoteLanding>
   final Map<int, List<String>> _redoStacks = {};
   final Map<int, bool> _isOrganizing = {};
   bool _welcomeRequested = false;
+  bool _autoAiColor = false;
+
+  SwitcherChangeNotifier? _switcherProvider;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final provider = Provider.of<SwitcherChangeNotifier>(context, listen: false);
+    if (_switcherProvider != provider) {
+      _switcherProvider?.removeListener(_onSwitcherChanged);
+      _switcherProvider = provider;
+      _switcherProvider!.addListener(_onSwitcherChanged);
+    }
+  }
+
+  void _onSwitcherChanged() {
+    _updateUI(context);
+  }
   bool _isFiltering = false;
   final List<StreamSubscription> _aiSubs = [];
 
@@ -135,8 +154,11 @@ class _NoteLandingState extends State<NoteLanding>
         final cfgPrimarySwatch = await db.getConfig(Config.primarySwatch);
         final parsedIndex = int.tryParse(cfgPrimarySwatch.value ?? '0') ?? 0;
         _currentColorIndex = parsedIndex.clamp(0, AppTheme.themeColorPalette.length - 1);
+        final cfgAutoColor = await db.getConfig(Config.autoAiColor);
+        _autoAiColor = cfgAutoColor.value == '1';
         _updateUI(ctx);
         _requestWelcome();
+        _autoApplyAiColor(ctx);
       });
     }
     return true;
@@ -387,6 +409,7 @@ class _NoteLandingState extends State<NoteLanding>
     } catch (_) {
     } finally {
       if (mounted) setState(() => _isTranscribing = false);
+      try { File(audioPath).delete(); } catch (_) {}
     }
   }
 
@@ -431,6 +454,7 @@ class _NoteLandingState extends State<NoteLanding>
 
   @override
   void dispose() {
+    _switcherProvider?.removeListener(_onSwitcherChanged);
     for (final sub in _aiSubs) {
       sub.cancel();
     }
@@ -452,10 +476,6 @@ class _NoteLandingState extends State<NoteLanding>
     final colorScheme = theme.colorScheme;
     final switcherProvider = Provider.of<SwitcherChangeNotifier>(context);
 
-    switcherProvider.addListener(() {
-      _updateUI(context);
-    });
-
     return FutureBuilder(
         future: _asyncInit(context),
         builder: (context, snapshot) {
@@ -465,8 +485,7 @@ class _NoteLandingState extends State<NoteLanding>
             );
           }
 
-          List<Widget> _listTiles = _buildItemList(theme);
-          final isEmpty = _listTiles.isEmpty;
+          final isEmpty = _items.isEmpty;
 
           return Scaffold(
               appBar: AppBar(
@@ -479,11 +498,14 @@ class _NoteLandingState extends State<NoteLanding>
                       children: [
                         _buildStatsBar(colorScheme, sl),
                         Expanded(
-                          child: ReorderableListView(
+                          child: ReorderableListView.builder(
+                            itemCount: _items.length,
                             onReorder: _onReorder,
                             buildDefaultDragHandles: false,
                             proxyDecorator: _proxyDecorator,
-                            children: _listTiles,
+                            itemBuilder: (context, index) {
+                              return _buildNoteCard(_items[index], index, theme);
+                            },
                           ),
                         ),
                       ],
@@ -953,91 +975,123 @@ class _NoteLandingState extends State<NoteLanding>
                   ),
                   content: SizedBox(
                     width: 350,
-                    child: Wrap(
-                      spacing: 12,
-                      runSpacing: 12,
-                      alignment: WrapAlignment.center,
-                      children: List.generate(AppTheme.themeColorPalette.length, (index) {
-                        final color = AppTheme.themeColorPalette[index];
-                        final isSelected = index == _currentColorIndex;
-                        final luminance = color.computeLuminance();
-                        final checkColor = luminance > 0.5 ? Colors.black87 : Colors.white;
-                        final colorName = isZh ? _colorNamesZh[index] : _colorNamesEn[index];
-                        return Tooltip(
-                          message: colorName,
-                          preferBelow: false,
-                          child: InkWell(
-                            onTap: () {
-                              HapticFeedback.lightImpact();
-                              final themeNotifier = Provider.of<ThemeChangeNotifier>(dialogContext, listen: false);
-                              themeNotifier.setTheme(AppTheme.getLightTheme(color));
-                              db.setConfig(Config.primarySwatch, index.toString());
-                              setDialogState(() {
-                                _currentColorIndex = index;
-                              });
-                              setState(() {});
-                              _showAiColorCompliment(color);
-                            },
-                            borderRadius: BorderRadius.circular(16),
-                            child: AnimatedContainer(
-                              width: 48,
-                              height: 48,
-                              duration: const Duration(milliseconds: 200),
-                              decoration: BoxDecoration(
-                                color: color,
-                                shape: BoxShape.circle,
-                                border: Border.all(
-                                  color: isSelected
-                                      ? currentScheme.primary
-                                      : color.withValues(alpha: 0.3),
-                                  width: isSelected ? 3 : 1,
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Wrap(
+                          spacing: 12,
+                          runSpacing: 12,
+                          alignment: WrapAlignment.center,
+                          children: List.generate(AppTheme.themeColorPalette.length, (index) {
+                            final color = AppTheme.themeColorPalette[index];
+                            final isSelected = index == _currentColorIndex;
+                            final luminance = color.computeLuminance();
+                            final checkColor = luminance > 0.5 ? Colors.black87 : Colors.white;
+                            final colorName = isZh ? _colorNamesZh[index] : _colorNamesEn[index];
+                            return Tooltip(
+                              message: colorName,
+                              preferBelow: false,
+                              child: InkWell(
+                                onTap: () {
+                                  HapticFeedback.lightImpact();
+                                  final themeNotifier = Provider.of<ThemeChangeNotifier>(dialogContext, listen: false);
+                                  themeNotifier.setTheme(AppTheme.getLightTheme(color));
+                                  db.setConfig(Config.primarySwatch, index.toString());
+                                  setDialogState(() {
+                                    _currentColorIndex = index;
+                                  });
+                                  setState(() {});
+                                  _showAiColorCompliment(color);
+                                },
+                                borderRadius: BorderRadius.circular(16),
+                                child: AnimatedContainer(
+                                  width: 48,
+                                  height: 48,
+                                  duration: const Duration(milliseconds: 200),
+                                  decoration: BoxDecoration(
+                                    color: color,
+                                    shape: BoxShape.circle,
+                                    border: Border.all(
+                                      color: isSelected
+                                          ? currentScheme.primary
+                                          : color.withValues(alpha: 0.3),
+                                      width: isSelected ? 3 : 1,
+                                    ),
+                                    boxShadow: isSelected
+                                        ? [
+                                            BoxShadow(
+                                              color: color.withValues(alpha: 0.4),
+                                              blurRadius: 8,
+                                              spreadRadius: 1,
+                                            )
+                                          ]
+                                        : null,
+                                  ),
+                                  child: isSelected
+                                      ? Icon(Icons.check_rounded,
+                                          color: checkColor, size: 24)
+                                      : null,
                                 ),
-                                boxShadow: isSelected
-                                    ? [
-                                        BoxShadow(
-                                          color: color.withValues(alpha: 0.4),
-                                          blurRadius: 8,
-                                          spreadRadius: 1,
-                                        )
-                                      ]
-                                    : null,
                               ),
-                              child: isSelected
-                                  ? Icon(Icons.check_rounded,
-                                      color: checkColor, size: 24)
-                                  : null,
-                            ),
-                          ),
-                        );
-                      }),
+                            );
+                          }),
+                        ),
+                      ],
                     ),
                   ),
+                  actionsAlignment: MainAxisAlignment.spaceBetween,
                   actions: <Widget>[
-                    if (AiService.instance.isReady && !AiService.instance.isThinkingModel)
-                      TextButton.icon(
-                        icon: Icon(Icons.auto_awesome, size: 16, color: currentScheme.primary),
-                        label: Text(
-                          sl.getText('aiRecommendColor') ?? 'AI Recommend',
-                          style: TextStyle(
-                            fontWeight: FontWeight.w600,
-                            fontSize: 14,
-                            color: currentScheme.primary,
+                    Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        const SizedBox(width: 8),
+                        SizedBox(
+                          height: 30,
+                          width: 50,
+                          child: FittedBox(
+                            fit: BoxFit.contain,
+                            child: Switch(
+                              value: _autoAiColor,
+                              onChanged: (v) {
+                                db.setConfig(Config.autoAiColor, v ? '1' : '0');
+                                setDialogState(() => _autoAiColor = v);
+                                setState(() {});
+                              },
+                            ),
                           ),
                         ),
-                        onPressed: () => _aiRecommendColor(dialogContext, setDialogState),
-                      ),
-                    TextButton(
-                        child: Text(
-                          sl.getText('colorPickerClose')!,
-                          style: TextStyle(
-                            fontWeight: FontWeight.w600,
-                            fontSize: 16,
-                            color: currentScheme.primary,
+                      ],
+                    ),
+                    Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        if (AiService.instance.isReady && !AiService.instance.isThinkingModel)
+                          TextButton.icon(
+                            icon: Icon(Icons.auto_awesome, size: 16, color: currentScheme.primary),
+                            label: Text(
+                              sl.getText('aiRecommendColor') ?? 'AI Recommend',
+                              style: TextStyle(
+                                fontWeight: FontWeight.w600,
+                                fontSize: 14,
+                                color: currentScheme.primary,
+                              ),
+                            ),
+                            onPressed: () => _aiRecommendColor(dialogContext, setDialogState),
                           ),
-                        ),
-                        onPressed: () {
-                          Navigator.of(dialogContext).pop();
-                        })
+                        TextButton(
+                            child: Text(
+                              sl.getText('colorPickerClose')!,
+                              style: TextStyle(
+                                fontWeight: FontWeight.w600,
+                                fontSize: 16,
+                                color: currentScheme.primary,
+                              ),
+                            ),
+                            onPressed: () {
+                              Navigator.of(dialogContext).pop();
+                            }),
+                      ],
+                    ),
                   ]);
             },
           );
@@ -1134,6 +1188,54 @@ class _NoteLandingState extends State<NoteLanding>
           _currentColorIndex = matchIndex;
         });
         setState(() {});
+      }
+    } catch (_) {}
+  }
+
+  void _autoApplyAiColor(BuildContext ctx) async {
+    if (!_autoAiColor) return;
+    if (!AiService.instance.isReady) {
+      if (AiService.instance.state != AiServiceState.loading) return;
+      while (AiService.instance.state == AiServiceState.loading) {
+        await Future.delayed(const Duration(milliseconds: 500));
+      }
+      if (!AiService.instance.isReady) return;
+    }
+    if (AiService.instance.isThinkingModel) return;
+
+    if (McpService.instance.isEnabled && McpService.instance.contextCache.isEmpty) {
+      for (int i = 0; i < 10; i++) {
+        await Future.delayed(const Duration(milliseconds: 500));
+        if (McpService.instance.contextCache.isNotEmpty) break;
+      }
+    }
+
+    final mcpCtx = McpService.instance.contextCache;
+    final colorNames = [
+      'red', 'pink', 'purple', 'deepPurple', 'indigo', 'blue',
+      'lightBlue', 'cyan', 'teal', 'green', 'lightGreen', 'lime',
+      'yellow', 'amber', 'orange', 'deepOrange',
+      'mistBlue', 'mint', 'smokyPink', 'slate',
+    ];
+
+    final buffer = StringBuffer();
+    try {
+      await AiService.instance
+          .completeStream(
+            AiPrompts.recommendColor(mcpCtx, colorNames),
+            'recommend',
+            maxLength: 30,
+          )
+          .forEach((token) => buffer.write(token));
+
+      final result = buffer.toString().trim().toLowerCase();
+      final matchIndex = colorNames.indexWhere((name) => result.contains(name.toLowerCase()));
+      if (matchIndex >= 0 && matchIndex < AppTheme.themeColorPalette.length && mounted) {
+        final color = AppTheme.themeColorPalette[matchIndex];
+        final themeNotifier = Provider.of<ThemeChangeNotifier>(ctx, listen: false);
+        themeNotifier.setTheme(AppTheme.getLightTheme(color));
+        db.setConfig(Config.primarySwatch, matchIndex.toString());
+        setState(() => _currentColorIndex = matchIndex);
       }
     } catch (_) {}
   }
@@ -1414,12 +1516,9 @@ class _NoteLandingState extends State<NoteLanding>
     return result ?? false;
   }
 
-  List<Widget> _buildItemList(ThemeData theme) {
+  Widget _buildNoteCard(Note item, int index, ThemeData theme) {
     final sl = SimpleLocalizations.of(context)!;
     final colorScheme = theme.colorScheme;
-
-    List<Widget> _listTiles = _items.asMap().entries.map((entry) {
-      Note item = entry.value;
 
       _ctrls.putIfAbsent(
           '${item.id}cblt', () => TextEditingController(text: item.content));
@@ -1577,7 +1676,7 @@ class _NoteLandingState extends State<NoteLanding>
                           Padding(
                             padding: const EdgeInsets.only(top: 2),
                             child: ReorderableDragStartListener(
-                              index: entry.key,
+                              index: index,
                               child: Icon(
                                 Icons.drag_handle,
                                 color: colorScheme.onSurfaceVariant,
@@ -1799,8 +1898,5 @@ class _NoteLandingState extends State<NoteLanding>
         },
         child: card,
       );
-    }).toList();
-
-    return _listTiles;
   }
 }

@@ -42,6 +42,7 @@ class _AiChatState extends State<AiChat> {
   LiteLmConversation? _conversation;
   bool _conversationHasTools = false;
   StreamSubscription? _streamSub;
+  StreamSubscription? _playerStateSub;
 
   int? _currentSessionId;
   bool _isReadOnly = false;
@@ -117,6 +118,7 @@ class _AiChatState extends State<AiChat> {
     McpService.instance.onContextReady = null;
     _streamThrottleTimer?.cancel();
     _streamSub?.cancel();
+    _playerStateSub?.cancel();
     _conversation?.dispose();
     _recordingTimer?.cancel();
     _recorder.dispose();
@@ -220,7 +222,8 @@ class _AiChatState extends State<AiChat> {
         await _audioPlayer.setFilePath(audioPath);
         setState(() => _playingAudioPath = audioPath);
         _audioPlayer.play();
-        _audioPlayer.playerStateStream.listen((state) {
+        _playerStateSub?.cancel();
+        _playerStateSub = _audioPlayer.playerStateStream.listen((state) {
           if (state.processingState == ProcessingState.completed && mounted) {
             setState(() => _playingAudioPath = null);
           }

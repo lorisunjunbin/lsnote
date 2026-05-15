@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
@@ -39,6 +40,8 @@ class _NoteItemState extends State<NoteItem>
   String? _lastRecordingPath;
   final AudioPlayer _audioPlayer = AudioPlayer();
   bool _isPlaying = false;
+  StreamSubscription? _playerStateSub;
+  StreamSubscription? _aiStreamSub;
 
   @override
   void initState() {
@@ -82,12 +85,17 @@ class _NoteItemState extends State<NoteItem>
 
   @override
   void dispose() {
+    _aiStreamSub?.cancel();
+    _playerStateSub?.cancel();
     _recorder.dispose();
     _audioPlayer.dispose();
     _contentCtl.removeListener(_onContentChanged);
     _contentCtl.dispose();
     _titleCtl.dispose();
     _animationController.dispose();
+    if (_lastRecordingPath != null) {
+      try { File(_lastRecordingPath!).delete(); } catch (_) {}
+    }
     super.dispose();
   }
 
@@ -542,7 +550,8 @@ class _NoteItemState extends State<NoteItem>
     setState(() => _isAiProcessing = true);
 
     final buffer = StringBuffer();
-    AiService.instance
+    _aiStreamSub?.cancel();
+    _aiStreamSub = AiService.instance
         .completeStreamNoThink(systemPrompt, rawText)
         .listen(
       (token) {
@@ -763,7 +772,8 @@ class _NoteItemState extends State<NoteItem>
         await _audioPlayer.setFilePath(_lastRecordingPath!);
         setState(() => _isPlaying = true);
         _audioPlayer.play();
-        _audioPlayer.playerStateStream.listen((state) {
+        _playerStateSub?.cancel();
+        _playerStateSub = _audioPlayer.playerStateStream.listen((state) {
           if (state.processingState == ProcessingState.completed && mounted) {
             setState(() => _isPlaying = false);
           }
