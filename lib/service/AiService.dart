@@ -386,7 +386,7 @@ class AiService {
   }
 
   Stream<String> completeStreamNoThink(String systemPrompt, String userMessage,
-      {double temperature = 0.3, int maxLength = 500}) async* {
+      {double temperature = 0.7, int maxLength = 500}) async* {
     if (_engine == null || _state != AiServiceState.ready) {
       throw AiServiceException('AI engine not ready');
     }
@@ -399,7 +399,7 @@ class AiService {
         systemInstruction: noThinkPrompt,
         samplerConfig: LiteLmSamplerConfig(
           temperature: temperature,
-          topK: 64,
+          topK: 40,
           topP: 0.95,
         ),
       ),
@@ -418,6 +418,7 @@ class AiService {
       {int? maxLength}) async* {
     final buffer = StringBuffer();
     bool inThink = false;
+    int lastYieldedLen = 0;
 
     await for (final delta in conversation.sendMessageStream(userMessage)) {
       buffer.write(delta.text);
@@ -431,26 +432,33 @@ class AiService {
         buffer.write(cleaned);
         inThink = false;
         if (maxLength != null && cleaned.length >= maxLength) {
-          yield cleaned.substring(0, maxLength);
+          yield cleaned.substring(lastYieldedLen, maxLength);
           return;
         }
-        if (cleaned.isNotEmpty) yield cleaned;
+        if (cleaned.length > lastYieldedLen) {
+          yield cleaned.substring(lastYieldedLen);
+          lastYieldedLen = cleaned.length;
+        }
       } else if (!inThink) {
         final cleaned = text.replaceAll(_reThinkOpen, '').trim();
         if (maxLength != null && cleaned.length >= maxLength) {
-          yield cleaned.substring(0, maxLength);
+          yield cleaned.substring(lastYieldedLen, maxLength);
           return;
         }
-        if (cleaned.isNotEmpty) yield cleaned;
+        if (cleaned.length > lastYieldedLen) {
+          yield cleaned.substring(lastYieldedLen);
+          lastYieldedLen = cleaned.length;
+        }
       }
     }
     if (inThink) {
       final text = buffer.toString();
       final cleaned = text.replaceAll(_reThinkPartial, '').trim();
-      if (cleaned.isNotEmpty) {
-        yield (maxLength != null && cleaned.length > maxLength)
-            ? cleaned.substring(0, maxLength)
-            : cleaned;
+      if (cleaned.length > lastYieldedLen) {
+        final remaining = (maxLength != null && cleaned.length > maxLength)
+            ? cleaned.substring(lastYieldedLen, maxLength)
+            : cleaned.substring(lastYieldedLen);
+        if (remaining.isNotEmpty) yield remaining;
       }
     }
   }

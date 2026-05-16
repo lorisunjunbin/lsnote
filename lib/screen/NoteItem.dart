@@ -522,17 +522,19 @@ class _NoteItemState extends State<NoteItem>
     );
   }
 
-  void _runAiAction(String systemPrompt) {
+  void _runAiAction(String systemPrompt, {int maxLength = 1000}) {
     if (!AiService.instance.isReady) return;
     final rawText = _contentCtl.text.trim();
     if (rawText.isEmpty) return;
 
     setState(() => _isAiProcessing = true);
 
+    final effectiveMax = (rawText.length * 2).clamp(200, maxLength);
     final buffer = StringBuffer();
     _aiStreamSub?.cancel();
     _aiStreamSub = AiService.instance
-        .completeStreamNoThink(systemPrompt, rawText)
+        .completeStreamNoThink(systemPrompt, rawText,
+            maxLength: effectiveMax)
         .listen(
       (token) {
         buffer.write(token);
