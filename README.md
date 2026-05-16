@@ -59,13 +59,13 @@ Powered by **Gemma 4 E4B-it** via LiteRT-LM, all AI features run locally on-devi
 ![image](./images/20211023110054.jpg)
 
 ### Landing Page without content
-![image](./images/lsnote-screenshot/Screenshot_20260309_152618.png)
+![image](images/lsnote-screenshot/Screenshot_20260309_152618.png)
 
 
 ### Create New Note 
-![image](./images/lsnote-screenshot/Screenshot_20260309_152632.png)
+![image](images/lsnote-screenshot/Screenshot_20260309_152632.png)
 
-![image](./images/lsnote-screenshot/Screenshot_20260309_152826.png)
+![image](images/lsnote-screenshot/Screenshot_20260309_152826.png)
 
 - Optional **target date** — defaults to tomorrow, can be cleared
 - Target date displayed in green (future) or gray (past) on landing page
@@ -102,11 +102,11 @@ Powered by **Gemma 4 E4B-it** via LiteRT-LM, all AI features run locally on-devi
 
 ### Theme Color
 
-![image](./images/lsnote-screenshot/Screenshot_20260309_154314.png)
+![image](images/lsnote-screenshot/Screenshot_20260309_154314.png)
 
 ### Number Puzzle 
 
-![image](./images/lsnote-screenshot/Screenshot_20260309_154846.png)
+![image](images/lsnote-screenshot/Screenshot_20260309_154846.png)
 
 - Custom digit pad (no system keyboard needed)
 - **Easy Mode** — toggle color hints: green = correct position, orange = correct digit wrong position, gray = miss
@@ -117,3 +117,8 @@ Powered by **Gemma 4 E4B-it** via LiteRT-LM, all AI features run locally on-devi
 
 ![image](./images/lsnote-screenshot/Screenshot_20260309_155826.png)
 
+AI Chat & On device AI 
+
+![image](./images/lsnote-screenshot/Screenshot_20260516_164616.png)
+
+![image](./images/lsnote-screenshot/Screenshot_20260516_164624.png)
