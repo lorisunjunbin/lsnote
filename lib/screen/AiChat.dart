@@ -1899,44 +1899,52 @@ class _AiChatState extends State<AiChat> {
                       child: Column(
                         children: [
                           if (McpService.instance.contextCache.isNotEmpty)
-                            Container(
-                              width: double.infinity,
-                              margin: const EdgeInsets.fromLTRB(16, 16, 16, 8),
-                              padding: const EdgeInsets.all(14),
-                              decoration: BoxDecoration(
-                                color: colorScheme.surfaceContainerLow,
-                                borderRadius: BorderRadius.circular(12),
-                                border: Border.all(
-                                  color: colorScheme.outlineVariant.withValues(alpha: 0.5),
+                            GestureDetector(
+                              onLongPress: () {
+                                Clipboard.setData(ClipboardData(text: McpService.instance.contextCache));
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  SnackBar(content: Text(sl.getText('aiCopied') ?? 'Copied')),
+                                );
+                              },
+                              child: Container(
+                                width: double.infinity,
+                                margin: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+                                padding: const EdgeInsets.all(14),
+                                decoration: BoxDecoration(
+                                  color: colorScheme.surfaceContainerLow,
+                                  borderRadius: BorderRadius.circular(12),
+                                  border: Border.all(
+                                    color: colorScheme.outlineVariant.withValues(alpha: 0.5),
+                                  ),
                                 ),
-                              ),
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Row(
-                                    children: [
-                                      Icon(_weatherIcon(McpService.instance.contextCache), size: 16, color: colorScheme.primary),
-                                      const SizedBox(width: 6),
-                                      Text(
-                                        sl.getText('aiTodayInfo') ?? 'Today',
-                                        style: TextStyle(
-                                          fontSize: 13,
-                                          fontWeight: FontWeight.w600,
-                                          color: colorScheme.primary,
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Row(
+                                      children: [
+                                        Icon(_weatherIcon(McpService.instance.contextCache), size: 16, color: colorScheme.primary),
+                                        const SizedBox(width: 6),
+                                        Text(
+                                          sl.getText('aiTodayInfo') ?? 'Today',
+                                          style: TextStyle(
+                                            fontSize: 13,
+                                            fontWeight: FontWeight.w600,
+                                            color: colorScheme.primary,
+                                          ),
                                         ),
-                                      ),
-                                    ],
-                                  ),
-                                  const SizedBox(height: 8),
-                                  Text(
-                                    McpService.instance.contextCache,
-                                    style: TextStyle(
-                                      fontSize: 12,
-                                      color: colorScheme.onSurfaceVariant,
-                                      height: 1.5,
+                                      ],
                                     ),
-                                  ),
-                                ],
+                                    const SizedBox(height: 8),
+                                    Text(
+                                      McpService.instance.contextCache,
+                                      style: TextStyle(
+                                        fontSize: 12,
+                                        color: colorScheme.onSurfaceVariant,
+                                        height: 1.5,
+                                      ),
+                                    ),
+                                  ],
+                                ),
                               ),
                             ),
                           const SizedBox(height: 24),
@@ -2028,8 +2036,173 @@ class _AiChatState extends State<AiChat> {
       label: Text(label, style: const TextStyle(fontSize: 12)),
       backgroundColor: Colors.transparent,
       side: BorderSide(color: colorScheme.outlineVariant),
-      onPressed: () => _inputCtl.text = label,
+      onPressed: () => _executeQuickAction(label),
     );
+  }
+
+  Widget _buildMiniActionChip(String label, IconData icon, ColorScheme colorScheme) {
+    return InkWell(
+      onTap: () => _executeQuickAction(label),
+      borderRadius: BorderRadius.circular(12),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: colorScheme.outlineVariant.withValues(alpha: 0.6)),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(icon, size: 12, color: colorScheme.primary),
+            const SizedBox(width: 4),
+            Text(label, style: TextStyle(fontSize: 11, color: colorScheme.onSurfaceVariant)),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Future<void> _executeQuickAction(String action) async {
+    if (_isStreaming) return;
+    if (!AiService.instance.isReady) return;
+
+    final sl = SimpleLocalizations.of(context)!;
+    final summarizeLabel = sl.getText('aiSummarize') ?? 'Summarize';
+    final translateLabel = sl.getText('aiTranslate') ?? 'Translate';
+    final organizeLabel = sl.getText('aiOrganize') ?? 'AI Organize';
+
+    final inputText = _inputCtl.text.trim();
+    final hasNote = _attachedNote != null &&
+        (_attachedNote!.content ?? '').trim().isNotEmpty;
+    final hasInput = inputText.isNotEmpty;
+
+    String content;
+    String systemPrompt;
+
+    if (hasNote && hasInput) {
+      // 输入框内容作为额外指令，笔记作为操作对象
+      content = '${_attachedNote!.content}\n\nUser instruction: $inputText';
+      if (action == summarizeLabel) {
+        systemPrompt = AiPrompts.summarize();
+      } else if (action == translateLabel) {
+        systemPrompt = AiPrompts.translate;
+      } else {
+        systemPrompt = AiPrompts.landingOrganize();
+      }
+    } else if (hasNote) {
+      // 只有笔记，对笔记内容执行操作
+      content = _attachedNote!.content!;
+      if (action == summarizeLabel) {
+        systemPrompt = AiPrompts.summarize();
+      } else if (action == translateLabel) {
+        systemPrompt = AiPrompts.translate;
+      } else {
+        systemPrompt = AiPrompts.landingOrganize();
+      }
+    } else if (hasInput) {
+      // 只有输入框内容，对输入框内容执行操作
+      content = inputText;
+      if (action == summarizeLabel) {
+        systemPrompt = AiPrompts.summarize();
+      } else if (action == translateLabel) {
+        systemPrompt = AiPrompts.translate;
+      } else {
+        systemPrompt = AiPrompts.landingOrganize();
+      }
+    } else {
+      // 无内容
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(sl.getText('aiNoContent') ?? 'Please enter text or attach a note'),
+        ),
+      );
+      return;
+    }
+
+    // Dispose existing conversation — LiteRT-LM only allows one at a time
+    _conversation?.dispose();
+    _conversation = null;
+    _conversationHasTools = false;
+
+    await _ensureSession();
+
+    final displayText = hasInput ? '$action: $inputText' : action;
+    final userMsg = ChatMessage(role: 'user', content: displayText);
+    setState(() {
+      _messages.add(userMsg);
+      _isStreaming = true;
+    });
+    WakelockPlus.enable();
+    _persistMessage(userMsg);
+    _inputCtl.clear();
+    _scrollToBottom();
+
+    final assistantMsg = ChatMessage(role: 'assistant', content: '');
+    setState(() => _messages.add(assistantMsg));
+
+    final buffer = StringBuffer();
+    try {
+      final completer = Completer<void>();
+      _streamSub = AiService.instance
+          .completeStream(systemPrompt, content)
+          .listen(
+        (token) {
+          if (!mounted) return;
+          buffer.write(token);
+          final parsed = _parseThinking(buffer.toString());
+          setState(() {
+            _messages[_messages.length - 1] = ChatMessage(
+              role: 'assistant',
+              content: parsed['content']!,
+              thinkingContent:
+                  parsed['thinking']!.isEmpty ? null : parsed['thinking'],
+              timestamp: assistantMsg.timestamp,
+            );
+          });
+          _scrollToBottom();
+        },
+        onDone: () {
+          WakelockPlus.disable();
+          if (mounted) {
+            final parsed = _parseThinking(buffer.toString());
+            final finalMsg = ChatMessage(
+              role: 'assistant',
+              content: parsed['content']!,
+              thinkingContent:
+                  parsed['thinking']!.isEmpty ? null : parsed['thinking'],
+              timestamp: assistantMsg.timestamp,
+            );
+            setState(() {
+              _messages[_messages.length - 1] = finalMsg;
+              _isStreaming = false;
+            });
+            _persistMessage(finalMsg);
+            _scrollToBottom();
+          }
+          if (!completer.isCompleted) completer.complete();
+        },
+        onError: (e) {
+          WakelockPlus.disable();
+          if (mounted) {
+            setState(() {
+              _messages[_messages.length - 1] = ChatMessage(
+                role: 'assistant',
+                content: 'Error: $e',
+                timestamp: assistantMsg.timestamp,
+              );
+              _isStreaming = false;
+            });
+          }
+          if (!completer.isCompleted) completer.complete();
+        },
+        cancelOnError: true,
+      );
+      await completer.future;
+      _streamSub = null;
+    } catch (_) {
+      WakelockPlus.disable();
+      setState(() => _isStreaming = false);
+    }
   }
 
   Widget _buildMessageBubble(ChatMessage msg, ColorScheme colorScheme) {
@@ -2532,6 +2705,19 @@ class _AiChatState extends State<AiChat> {
                       onPressed: () =>
                           setState(() => _pendingImagePath = null),
                     ),
+                  ],
+                ),
+              ),
+            if (AiService.instance.isReady && !_isStreaming && !_isRecording)
+              Padding(
+                padding: const EdgeInsets.only(bottom: 6),
+                child: Row(
+                  children: [
+                    _buildMiniActionChip(sl.getText('aiSummarize') ?? 'Summarize', Icons.summarize, colorScheme),
+                    const SizedBox(width: 6),
+                    _buildMiniActionChip(sl.getText('aiTranslate') ?? 'Translate', Icons.translate, colorScheme),
+                    const SizedBox(width: 6),
+                    _buildMiniActionChip(sl.getText('aiOrganize') ?? 'AI Organize', Icons.auto_fix_high, colorScheme),
                   ],
                 ),
               ),

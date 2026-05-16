@@ -16,6 +16,8 @@ Powered by **Gemma 4 E4B-it** via LiteRT-LM, all AI features run locally on-devi
 - **Chat history persistence** — conversations auto-saved to SQLite sessions
 - **Session management** — browse history, tap to review (read-only), swipe to delete
 - **Continue conversation** — resume any past session with history injected as context
+- **Quick actions (Summarize / Translate / Organize)** — always accessible above input bar; operates on input text or attached note
+- **Today's info card** — vivid emoji-prefixed daily summary; long-press to copy
 - Polished chat UI with refined bubble styling and typing indicators
 - Markdown rendering (headings, code blocks, inline code, lists)
 - Attach a note as context for Q&A

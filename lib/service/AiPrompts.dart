@@ -82,7 +82,7 @@ class AiPrompts {
   // === MCP context summarization ===
 
   static String summarizeContext() =>
-      'Summarize the following raw data into a user-friendly daily info card (4-6 lines). Include: weather, lunar date, Ganzhi date (天干地支, from the "ganzhi" field), holidays, and auspicious activities if available. Use simple language. Output ONLY the summary. $_lang';
+      'Summarize the following raw data into a vivid daily info card. Rules:\n- Each piece of info on its own line\n- Start each line with a fitting emoji (e.g. ☀️ weather, 📅 date, 🌙 lunar, 🧧 holiday, 🎯 auspicious)\n- Include: weather, lunar date, Ganzhi date (天干地支, from "ganzhi" field), holidays, auspicious activities if available\n- Keep each line concise (under 20 words)\n- No title, no heading, no extra blank lines\n- Output ONLY the lines. $_lang';
 
   // === Color recommendation ===
 
