@@ -56,6 +56,7 @@ class _AiChatState extends State<AiChat> {
   Timer? _recordingTimer;
   final AudioPlayer _audioPlayer = AudioPlayer();
   String? _playingAudioPath;
+  final Map<int, List<InlineSpan>> _markdownCache = {};
   final Map<String, bool> _expandedAudioTranscripts = {};
   Timer? _streamThrottleTimer;
   bool _streamDirty = false;
@@ -645,6 +646,7 @@ class _AiChatState extends State<AiChat> {
     _conversation?.dispose();
     _conversation = null;
     _conversationHasTools = false;
+    _markdownCache.clear();
     _finalizeSession();
     setState(() {
       _messages.clear();
@@ -2188,8 +2190,8 @@ class _AiChatState extends State<AiChat> {
                               )
                             : SelectableText.rich(
                                 TextSpan(
-                                  children: parseMarkdown(
-                                    msg.content,
+                                  children: _getCachedMarkdown(
+                                    msg,
                                     TextStyle(
                                       color: colorScheme.onSurface,
                                       fontSize: 12,
@@ -2223,6 +2225,18 @@ class _AiChatState extends State<AiChat> {
         ],
       ),
     );
+  }
+
+  List<InlineSpan> _getCachedMarkdown(
+      ChatMessage msg, TextStyle baseStyle, ColorScheme colorScheme) {
+    final key = msg.content.hashCode ^ msg.content.length;
+    final cached = _markdownCache[key];
+    if (cached != null) return cached;
+    final result = parseMarkdown(msg.content, baseStyle, colorScheme);
+    if (!_isStreaming || _messages.last != msg) {
+      _markdownCache[key] = result;
+    }
+    return result;
   }
 
   void _showMessageActions(ChatMessage msg, SimpleLocalizations sl) {

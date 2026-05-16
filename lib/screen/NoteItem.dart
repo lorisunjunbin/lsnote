@@ -122,16 +122,10 @@ class _NoteItemState extends State<NoteItem>
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  _buildSectionTitle(sl, 'targetDate', 'Target Date'),
-                  const SizedBox(height: 8),
                   _buildDatepickerCard(colorScheme, sl),
                   const SizedBox(height: 16),
-                  _buildSectionTitle(sl, 'titleLabel', 'Title'),
-                  const SizedBox(height: 8),
                   _buildNoteTitleTextField(colorScheme, sl),
                   const SizedBox(height: 16),
-                  _buildSectionTitle(sl, 'contentLabel', 'Content'),
-                  const SizedBox(height: 8),
                   _buildNoteDetailTextField(colorScheme, sl),
                   const SizedBox(height: 24),
                   _buildSaveButton(colorScheme, sl),
@@ -162,19 +156,6 @@ class _NoteItemState extends State<NoteItem>
         style: const TextStyle(
           fontWeight: FontWeight.w600,
         ),
-      ),
-    );
-  }
-
-  Widget _buildSectionTitle(SimpleLocalizations sl, String key, String fallback) {
-    final colorScheme = Theme.of(context).colorScheme;
-    return Text(
-      sl.getText(key) ?? fallback,
-      style: TextStyle(
-        fontSize: 13,
-        fontWeight: FontWeight.w600,
-        color: colorScheme.primary,
-        letterSpacing: 0.5,
       ),
     );
   }
@@ -257,7 +238,6 @@ class _NoteItemState extends State<NoteItem>
       lastDate: DateTime.parse("2030-12-31"),
       cancelText: sl.getText('cancelLabel'),
       confirmText: sl.getText('confirmLabel'),
-      helpText: sl.getText('targetDate') ?? 'Select Date',
       builder: (context, child) {
         return Theme(
           data: Theme.of(context).copyWith(
