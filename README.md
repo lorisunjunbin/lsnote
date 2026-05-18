@@ -38,6 +38,7 @@ Powered by **Gemma 4 E4B-it** via LiteRT-LM, all AI features run locally on-devi
 
 ### Note AI Assist
 - **Organize** / **Polish** / **Continue** / **Translate** — action chips in note editor
+- **Continue** appends to existing text instead of replacing it; tap repeatedly to extend long output
 - **Photo to Note** — take a photo or pick from gallery, AI extracts text (in note editor)
 - **Quick Voice Note** — tap the mic FAB on landing page, AI transcribes and auto-creates a new note
 
@@ -50,6 +51,7 @@ Powered by **Gemma 4 E4B-it** via LiteRT-LM, all AI features run locally on-devi
 
 ### Performance & Battery
 - **Stream throttling** — batched UI updates (~80ms) for smooth streaming output
+- **Async native dispose** — LiteRT-LM `disposeConversation`/`disposeEngine` run on a background coroutine in the plugin layer, eliminating ANR when leaving the chat or switching sessions during inference
 - **Smart WakeLock** — screen stays on only during active inference
 - **Lazy list rendering** — `ReorderableListView.builder` for efficient note list scrolling
 - **Listener lifecycle** — no duplicate listeners, all stream subscriptions tracked and cancelled on dispose

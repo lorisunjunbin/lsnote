@@ -2119,12 +2119,22 @@ class _AiChatState extends State<AiChat> {
       return;
     }
 
-    // Dispose existing conversation — LiteRT-LM only allows one at a time
-    _conversation?.dispose();
-    _conversation = null;
-    _conversationHasTools = false;
+    // Reuse existing chat conversation — same session, keep context.
+    // No dispose/reconnect needed since we send the prompt as a regular user
+    // message through sendMessageStream.
+    try {
+      await _ensureConversation();
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Error: $e')),
+      );
+      return;
+    }
 
     await _ensureSession();
+
+    // Compose action instruction + target content as a single user turn
+    final composedPrompt = '$systemPrompt\n\n---\n$content';
 
     final displayText = hasInput ? '$action: $inputText' : action;
     final userMsg = ChatMessage(role: 'user', content: displayText);
@@ -2138,32 +2148,33 @@ class _AiChatState extends State<AiChat> {
     _scrollToBottom();
 
     final assistantMsg = ChatMessage(role: 'assistant', content: '');
+    final assistantIndex = _messages.length;
     setState(() => _messages.add(assistantMsg));
 
     final buffer = StringBuffer();
     try {
       final completer = Completer<void>();
-      _streamSub = AiService.instance
-          .completeStream(systemPrompt, content)
-          .listen(
+      _streamSub = _conversation!.sendMessageStream(composedPrompt).listen(
         (token) {
           if (!mounted) return;
-          buffer.write(token);
+          buffer.write(token.text);
           final parsed = _parseThinking(buffer.toString());
-          setState(() {
-            _messages[_messages.length - 1] = ChatMessage(
-              role: 'assistant',
-              content: parsed['content']!,
-              thinkingContent:
-                  parsed['thinking']!.isEmpty ? null : parsed['thinking'],
-              timestamp: assistantMsg.timestamp,
-            );
-          });
+          if (assistantIndex < _messages.length) {
+            setState(() {
+              _messages[assistantIndex] = ChatMessage(
+                role: 'assistant',
+                content: parsed['content']!,
+                thinkingContent:
+                    parsed['thinking']!.isEmpty ? null : parsed['thinking'],
+                timestamp: assistantMsg.timestamp,
+              );
+            });
+          }
           _scrollToBottom();
         },
         onDone: () {
           WakelockPlus.disable();
-          if (mounted) {
+          if (mounted && assistantIndex < _messages.length) {
             final parsed = _parseThinking(buffer.toString());
             final finalMsg = ChatMessage(
               role: 'assistant',
@@ -2173,25 +2184,29 @@ class _AiChatState extends State<AiChat> {
               timestamp: assistantMsg.timestamp,
             );
             setState(() {
-              _messages[_messages.length - 1] = finalMsg;
+              _messages[assistantIndex] = finalMsg;
               _isStreaming = false;
             });
             _persistMessage(finalMsg);
             _scrollToBottom();
+          } else if (mounted) {
+            setState(() => _isStreaming = false);
           }
           if (!completer.isCompleted) completer.complete();
         },
         onError: (e) {
           WakelockPlus.disable();
-          if (mounted) {
+          if (mounted && assistantIndex < _messages.length) {
             setState(() {
-              _messages[_messages.length - 1] = ChatMessage(
+              _messages[assistantIndex] = ChatMessage(
                 role: 'assistant',
                 content: 'Error: $e',
                 timestamp: assistantMsg.timestamp,
               );
               _isStreaming = false;
             });
+          } else if (mounted) {
+            setState(() => _isStreaming = false);
           }
           if (!completer.isCompleted) completer.complete();
         },

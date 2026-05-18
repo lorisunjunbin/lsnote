@@ -117,15 +117,24 @@ class FlutterLitertLmPlugin : FlutterPlugin, MethodCallHandler, EventChannel.Str
 
     private fun handleDisposeEngine(call: MethodCall, result: Result) {
         val engineId = call.argument<String>("engineId")!!
-        // Dispose all conversations belonging to this engine
+        // Collect resources to release and remove from registries first.
+        val convsToClose = mutableListOf<com.google.ai.edge.litertlm.Conversation>()
         conversationEngineMap.entries
             .filter { it.value == engineId }
             .forEach { (convId, _) ->
-                conversations.remove(convId)?.close()
+                conversations.remove(convId)?.let { convsToClose.add(it) }
                 conversationEngineMap.remove(convId)
             }
-        engines.remove(engineId)?.close()
+        val engine = engines.remove(engineId)
+        // Return to Dart immediately — native close() may block on inference
+        // for many seconds, which would cause an ANR if run on the main thread.
         result.success(null)
+        scope.launch {
+            convsToClose.forEach {
+                try { it.close() } catch (_: Throwable) {}
+            }
+            try { engine?.close() } catch (_: Throwable) {}
+        }
     }
 
     private fun handleCreateConversation(call: MethodCall, result: Result) {
@@ -160,9 +169,18 @@ class FlutterLitertLmPlugin : FlutterPlugin, MethodCallHandler, EventChannel.Str
 
     private fun handleDisposeConversation(call: MethodCall, result: Result) {
         val convId = call.argument<String>("conversationId")!!
-        conversations.remove(convId)?.close()
+        val conv = conversations.remove(convId)
         conversationEngineMap.remove(convId)
+        // Return to Dart immediately — native close() may block on inference
+        // for many seconds, which would cause an ANR if run on the main thread.
         result.success(null)
+        if (conv != null) {
+            scope.launch {
+                try {
+                    conv.close()
+                } catch (_: Throwable) {}
+            }
+        }
     }
 
     private fun handleSendMessage(call: MethodCall, result: Result) {

@@ -81,6 +81,7 @@ class AiService {
   }
 
   LiteLmEngine? _engine;
+  LiteLmConversation? _activeOneShotConversation;
   String? _errorMessage;
 
   String? get errorMessage => _errorMessage;
@@ -355,6 +356,7 @@ class AiService {
         ),
       ),
     );
+    _activeOneShotConversation = conversation;
 
     try {
       if (_isQwenModel) {
@@ -381,7 +383,12 @@ class AiService {
         }
       }
     } finally {
-      conversation.dispose();
+      try {
+        conversation.dispose();
+      } catch (_) {}
+      if (identical(_activeOneShotConversation, conversation)) {
+        _activeOneShotConversation = null;
+      }
     }
   }
 
@@ -404,12 +411,18 @@ class AiService {
         ),
       ),
     );
+    _activeOneShotConversation = conversation;
 
     try {
       yield* _streamThinkFiltered(conversation, userMessage,
           maxLength: maxLength);
     } finally {
-      conversation.dispose();
+      try {
+        conversation.dispose();
+      } catch (_) {}
+      if (identical(_activeOneShotConversation, conversation)) {
+        _activeOneShotConversation = null;
+      }
     }
   }
 

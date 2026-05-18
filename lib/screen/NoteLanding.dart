@@ -1262,7 +1262,7 @@ class _NoteLandingState extends State<NoteLanding>
               if (!sheetClosed) setSheetState(fn);
             }
 
-            Future<void> runAction(String systemPrompt) async {
+            Future<void> runAction(String systemPrompt, {bool appendMode = false}) async {
               if (!AiService.instance.isReady) {
                 if (mounted) {
                   ScaffoldMessenger.of(context).showSnackBar(
@@ -1274,15 +1274,25 @@ class _NoteLandingState extends State<NoteLanding>
                 return;
               }
               if (isLoading) return;
+
+              final existing = aiResult ?? '';
+              final inputContent = appendMode && existing.isNotEmpty
+                  ? '$content\n$existing'
+                  : content;
+
               safeSetState(() {
                 isLoading = true;
-                aiResult = '';
+                if (!appendMode) {
+                  aiResult = '';
+                } else if (existing.isNotEmpty) {
+                  aiResult = '$existing\n';
+                }
               });
 
               try {
                 final completer = Completer<void>();
                 final sub = AiService.instance
-                    .completeStream(systemPrompt, content)
+                    .completeStream(systemPrompt, inputContent)
                     .listen(
                   (token) {
                     safeSetState(() {
@@ -1373,7 +1383,7 @@ class _NoteLandingState extends State<NoteLanding>
                           Icons.edit_note,
                           colorScheme,
                           isLoading,
-                          () => runAction(AiPrompts.landingContinue()),
+                          () => runAction(AiPrompts.landingContinue(), appendMode: true),
                         ),
                       ],
                     ),

@@ -34,7 +34,7 @@ class AiPrompts {
       '$_ctx\nImprove grammar and clarity. Keep meaning. Output only the result.';
 
   static String continueWriting() =>
-      '$_ctx\nContinue writing, match style and topic. Output only the continuation.';
+      '$_ctx\nThe text below is unfinished. Continue writing from where it stops, matching style and topic. Produce at least one new paragraph. Output ONLY the continuation, no preface, no acknowledgement.';
 
   static const String translate =
       'Translate: Chinese to English, English to Chinese. Output only the translation.';

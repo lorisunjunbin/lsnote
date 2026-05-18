@@ -522,35 +522,72 @@ class _NoteItemState extends State<NoteItem>
     );
   }
 
-  void _runAiAction(String systemPrompt, {int maxLength = 1000}) {
+  void _runAiAction(String systemPrompt, {int maxLength = 1000, bool appendMode = false}) {
     if (!AiService.instance.isReady) return;
     final rawText = _contentCtl.text.trim();
     if (rawText.isEmpty) return;
 
+    // Cancel any in-flight stream first. Cancelled streams do NOT fire
+    // onDone/onError, so we must reset the processing flag manually before
+    // starting a new run — otherwise a previously stuck flag would keep
+    // the button greyed out and the next press appears to do nothing.
+    _aiStreamSub?.cancel();
+    _aiStreamSub = null;
+
     setState(() => _isAiProcessing = true);
 
-    final effectiveMax = (rawText.length * 2).clamp(200, maxLength);
+    // For continue mode, give the model only the tail of the text so it sees
+    // an obvious "unfinished" handoff and resumes generating, instead of
+    // treating the long input as already-complete and emitting just a newline.
+    final modelInput = appendMode && rawText.length > 400
+        ? rawText.substring(rawText.length - 400)
+        : rawText;
+
+    // Use a generous max for continue mode so the user gets meaningful output.
+    final effectiveMax = appendMode
+        ? maxLength
+        : (rawText.length * 2).clamp(200, maxLength);
     final buffer = StringBuffer();
-    _aiStreamSub?.cancel();
-    _aiStreamSub = AiService.instance
-        .completeStreamNoThink(systemPrompt, rawText,
+
+    // For append mode (continue), preserve current controller text and only
+    // append new tokens at the end. For replace mode, swap the whole text.
+    final baseText = _contentCtl.text;
+    if (appendMode) {
+      // Insert a separator once, before any tokens arrive.
+      final needsNewline = baseText.isNotEmpty && !baseText.endsWith('\n');
+      if (needsNewline) {
+        _contentCtl.text = '$baseText\n';
+        _contentCtl.selection = TextSelection.collapsed(
+            offset: _contentCtl.text.length);
+      }
+    }
+    final lockedBase = _contentCtl.text;
+
+    final localSub = AiService.instance
+        .completeStreamNoThink(systemPrompt, modelInput,
             maxLength: effectiveMax)
         .listen(
       (token) {
         buffer.write(token);
         if (mounted) {
-          setState(() => _contentCtl.text = buffer.toString());
+          final newText = appendMode
+              ? '$lockedBase${buffer.toString()}'
+              : buffer.toString();
+          setState(() => _contentCtl.text = newText);
           _contentCtl.selection = TextSelection.collapsed(
               offset: _contentCtl.text.length);
         }
       },
       onDone: () {
         if (mounted) setState(() => _isAiProcessing = false);
+        _aiStreamSub = null;
       },
       onError: (_) {
         if (mounted) setState(() => _isAiProcessing = false);
+        _aiStreamSub = null;
       },
     );
+    _aiStreamSub = localSub;
   }
 
   void _organizeContent() {
@@ -562,7 +599,7 @@ class _NoteItemState extends State<NoteItem>
   }
 
   void _continueContent() {
-    _runAiAction(AiPrompts.continueWriting());
+    _runAiAction(AiPrompts.continueWriting(), appendMode: true);
   }
 
   void _translateContent() {
