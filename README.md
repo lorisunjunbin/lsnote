@@ -52,6 +52,7 @@ Powered by **Gemma 4 E4B-it** via LiteRT-LM, all AI features run locally on-devi
 ### Performance & Battery
 - **Stream throttling** — batched UI updates (~80ms) for smooth streaming output
 - **Async native dispose** — LiteRT-LM `disposeConversation`/`disposeEngine` run on a background coroutine in the plugin layer, eliminating ANR when leaving the chat or switching sessions during inference
+- **Centralized conversation lifecycle** — single `_invalidateConversation()` helper with try/catch protects against double-dispose and missed state resets across all 11 invalidation triggers
 - **Smart WakeLock** — screen stays on only during active inference
 - **Lazy list rendering** — `ReorderableListView.builder` for efficient note list scrolling
 - **Listener lifecycle** — no duplicate listeners, all stream subscriptions tracked and cancelled on dispose

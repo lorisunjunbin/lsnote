@@ -67,6 +67,7 @@ class _NoteLandingState extends State<NoteLanding>
     _updateUI(context);
   }
   bool _isFiltering = false;
+  final TextEditingController _searchCtl = TextEditingController();
   final List<StreamSubscription> _aiSubs = [];
 
   final AudioRecorder _recorder = AudioRecorder();
@@ -466,6 +467,7 @@ class _NoteLandingState extends State<NoteLanding>
     for (final controller in _removeAnimations.values) {
       controller.dispose();
     }
+    _searchCtl.dispose();
     super.dispose();
   }
 
@@ -561,6 +563,7 @@ class _NoteLandingState extends State<NoteLanding>
         children: [
           Expanded(
             child: TextField(
+              controller: _searchCtl,
               onChanged: (v) async {
                 if (v.isNotEmpty) {
                   _isFiltering = true;
@@ -590,6 +593,7 @@ class _NoteLandingState extends State<NoteLanding>
                     ? IconButton(
                         icon: Icon(Icons.clear, color: colorScheme.onSurfaceVariant, size: 18),
                         onPressed: () {
+                          _searchCtl.clear();
                           _isFiltering = false;
                           _updateUI(context);
                         },

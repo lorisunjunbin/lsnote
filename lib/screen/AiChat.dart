@@ -76,12 +76,21 @@ class _AiChatState extends State<AiChat> {
     _currentSessionId = id;
   }
 
+  void _invalidateConversation() {
+    final c = _conversation;
+    _conversation = null;
+    _conversationHasTools = false;
+    if (c != null) {
+      try {
+        c.dispose();
+      } catch (_) {}
+    }
+  }
+
   Future<void> _ensureConversation() async {
     final mcpTools = McpService.instance.tools;
     if (_conversation != null && !_conversationHasTools && mcpTools.isNotEmpty) {
-      _conversation?.dispose();
-      _conversation = null;
-      _conversationHasTools = false;
+      _invalidateConversation();
     }
     if (_conversation == null) {
       final mcpContext = McpService.instance.contextCache;
@@ -120,7 +129,7 @@ class _AiChatState extends State<AiChat> {
     _streamThrottleTimer?.cancel();
     _streamSub?.cancel();
     _playerStateSub?.cancel();
-    _conversation?.dispose();
+    _invalidateConversation();
     _recordingTimer?.cancel();
     _recorder.dispose();
     _audioPlayer.dispose();
@@ -643,9 +652,7 @@ class _AiChatState extends State<AiChat> {
   }
 
   void _clearChat() {
-    _conversation?.dispose();
-    _conversation = null;
-    _conversationHasTools = false;
+    _invalidateConversation();
     _markdownCache.clear();
     _finalizeSession();
     setState(() {
@@ -786,9 +793,7 @@ class _AiChatState extends State<AiChat> {
     final messages = await db.getChatMessages(session.id!);
     if (!mounted) return;
 
-    _conversation?.dispose();
-    _conversation = null;
-    _conversationHasTools = false;
+    _invalidateConversation();
 
     setState(() {
       _currentSessionId = session.id;
@@ -801,9 +806,7 @@ class _AiChatState extends State<AiChat> {
   }
 
   void _continueSession() {
-    _conversation?.dispose();
-    _conversation = null;
-    _conversationHasTools = false;
+    _invalidateConversation();
     final sl = SimpleLocalizations.of(context);
     final hint = sl?.getText('chatResumed') ?? 'Conversation resumed';
     setState(() {
@@ -869,9 +872,7 @@ class _AiChatState extends State<AiChat> {
       ),
     ).then((note) {
       if (note != null) {
-        _conversation?.dispose();
-        _conversation = null;
-        _conversationHasTools = false;
+        _invalidateConversation();
         setState(() => _attachedNote = note);
       }
     });
@@ -959,9 +960,7 @@ class _AiChatState extends State<AiChat> {
                         ? null
                         : () async {
                             setDialogState(() => isInitializing = true);
-                            _conversation?.dispose();
-                            _conversation = null;
-                            _conversationHasTools = false;
+                            _invalidateConversation();
                             await AiService.instance.activateModel(model);
                             final newBytes =
                                 await AiService.instance.modelFileSize;
@@ -1331,9 +1330,7 @@ class _AiChatState extends State<AiChat> {
                                       downloadProgress = 0.0;
                                       downloadError = null;
                                     });
-                                    _conversation?.dispose();
-                                    _conversation = null;
-                                    _conversationHasTools = false;
+                                    _invalidateConversation();
                                     final stream = hasModel
                                         ? AiService.instance.switchModel(model)
                                         : AiService.instance.downloadModel(model);
@@ -1593,9 +1590,7 @@ class _AiChatState extends State<AiChat> {
                             : () async {
                                 setDialogState(() => isMcpFetching = true);
                                 await AiService.instance.fetchAndSummarizeContext();
-                                _conversation?.dispose();
-                                _conversation = null;
-                                _conversationHasTools = false;
+                                _invalidateConversation();
                                 if (ctx.mounted) {
                                   setDialogState(() => isMcpFetching = false);
                                 }
@@ -1816,9 +1811,7 @@ class _AiChatState extends State<AiChat> {
                     ),
                     GestureDetector(
                       onTap: () {
-                        _conversation?.dispose();
-                        _conversation = null;
-                        _conversationHasTools = false;
+                        _invalidateConversation();
                         setState(() => _attachedNote = null);
                       },
                       child: Icon(Icons.close,
